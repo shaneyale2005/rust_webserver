@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # 压力测试脚本
-# 使用 Apache Bench (ab) 和 wrk 工具进行压力测试
 
 set -e
 
@@ -114,7 +113,7 @@ wrk_test() {
     done
 }
 
-# 并发连接测试（使用后台 curl）
+# 并发连接测试
 concurrent_curl_test() {
     echo ""
     echo "=== 并发连接测试 (使用 curl) ==="
@@ -172,7 +171,7 @@ long_running_test() {
     echo "平均请求率: ${rate} req/s"
 }
 
-# 大文件测试（如果存在）
+# 大文件测试
 large_file_test() {
     echo ""
     echo "=== 大文件传输测试 ==="
@@ -204,7 +203,7 @@ large_file_test() {
     fi
 }
 
-# 内存泄漏检测（简单版本）
+# 内存泄漏检测
 memory_leak_test() {
     echo ""
     echo "=== 内存泄漏检测 (简单) ==="
