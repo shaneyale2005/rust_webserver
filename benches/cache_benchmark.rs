@@ -86,7 +86,7 @@ fn cache_find_benchmark(c: &mut Criterion) {
 
     for size in [10, 100, 1000].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
-            // 预先填充缓存
+
             let mut cache = FileCache::from_capacity(size);
             let time = SystemTime::now();
             let content = Bytes::from("test content");
@@ -97,7 +97,6 @@ fn cache_find_benchmark(c: &mut Criterion) {
             }
 
             b.iter(|| {
-                // 查找存在的文件
                 for i in 0..size {
                     let filename = format!("file{}.txt", i);
                     let _ = cache.find(black_box(&filename), black_box(time));
@@ -124,7 +123,6 @@ fn cache_find_miss_benchmark(c: &mut Criterion) {
             }
 
             b.iter(|| {
-                // 查找不存在的文件
                 let _ = cache.find(black_box("nonexistent.txt"), black_box(time));
             });
         });
@@ -140,7 +138,6 @@ fn cache_eviction_benchmark(c: &mut Criterion) {
             let time = SystemTime::now();
             let content = Bytes::from("test content");
 
-            // 填充超过容量，触发替换
             for i in 0..200 {
                 let filename = format!("file{}.txt", i);
                 cache.push(
@@ -166,7 +163,6 @@ fn cache_time_invalidation_benchmark(c: &mut Criterion) {
         }
 
         b.iter(|| {
-            // 用不同的时间查找，应该全部失效
             for i in 0..100 {
                 let filename = format!("file{}.txt", i);
                 let _ = cache.find(black_box(&filename), black_box(time2));
