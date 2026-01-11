@@ -15,6 +15,7 @@ pub struct FileCache {
 }
 
 impl FileCache {
+    // 根据容量构造
     pub fn from_capacity(capacity: usize) -> Self {
         if capacity == 0 {
             panic!("调用from_capacity时指定的大小是0。如果需要自动设置大小，请在调用处进行处理，而不是传入0");
@@ -23,7 +24,7 @@ impl FileCache {
             cache: LruCache::new(NonZeroUsize::new(capacity).unwrap()),
         }
     }
-
+    // 放入
     pub fn push(&mut self, filename: &str, bytes: Bytes, modified_time: SystemTime) {
         let entry = CacheEntry {
             content: bytes,
@@ -31,7 +32,7 @@ impl FileCache {
         };
         self.cache.put(filename.to_string(), entry);
     }
-
+    // 查询有效缓存
     pub fn find(&mut self, filename: &str, current_modified_time: SystemTime) -> Option<&Bytes> {
         match self.cache.get(filename) {
             Some(entry) => {
@@ -44,7 +45,8 @@ impl FileCache {
             None => None,
         }
     }
-
+    
+    // 测试
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.cache.len()
