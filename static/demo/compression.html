@@ -282,7 +282,6 @@
             `;
         }
 
-        // 测试压缩效果
         async function testCompression() {
             const resultBox = document.getElementById('testResult');
             resultBox.style.display = 'block';
@@ -290,9 +289,7 @@
 
             try {
                 const startTime = performance.now();
-                // 浏览器的fetch API会自动处理压缩，Accept-Encoding头由浏览器自动添加
                 console.log('开始请求 /large_text.txt');
-                // 不手动设置Accept-Encoding，让浏览器自动处理
                 const response = await fetch('/large_text.txt', {
                     method: 'GET'
                 });
@@ -306,7 +303,6 @@
                 
                 const endTime = performance.now();
                 
-                // 我们需要从响应头获取压缩相关信息
                 const contentLength = response.headers.get('Content-Length');
                 const contentEncoding = response.headers.get('Content-Encoding') || '无压缩';
                 const contentType = response.headers.get('Content-Type');
@@ -315,14 +311,12 @@
                 console.log('Content-Length (from header):', contentLength);
                 
                 const blob = await response.blob();
-                const decompressedSize = blob.size; // 浏览器已解压，这是原始大小
+                const decompressedSize = blob.size;
                 const loadTime = (endTime - startTime).toFixed(2);
 
-                // blob.size是浏览器解压后的大小（原始大小）
                 let transferredSize = contentLength ? parseInt(contentLength) : decompressedSize;
                 let originalSize = decompressedSize;
                 
-                // 如果没有压缩，两者相同
                 if (contentEncoding === '无压缩' || !contentEncoding || contentEncoding === 'identity') {
                     transferredSize = originalSize;
                 }
@@ -374,7 +368,6 @@
             return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
         }
 
-        // 页面加载时检测
         window.onload = detectCompression;
     </script>
 </body>
