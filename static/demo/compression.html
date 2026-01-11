@@ -213,7 +213,7 @@
             <h1>HTTP Compression Test</h1>
             <p class="info-text">
                 本服务器支持多种HTTP压缩算法，包括 <span class="highlight">Brotli</span>、<span class="highlight">Gzip</span> 和 <span class="highlight">Deflate</span>。
-                服务器会根据客户端的 Accept-Encoding 请求头自动选择最优的压缩算法。本测试使用 <span class="highlight">19MB大文本文件</span> 验证压缩效果。
+                服务器会根据客户端的 Accept-Encoding 请求头自动选择最优的压缩算法。本测试使用 <span class="highlight">大文本文件</span> 验证压缩效果。
             </p>
 
             <div class="test-section">
@@ -225,7 +225,7 @@
 
             <div class="test-section">
                 <h3>Compression Test</h3>
-                <p class="info-text">点击按钮测试大文本文件（19MB）的Gzip压缩效果</p>
+                <p class="info-text">点击按钮测试大文本文件的Gzip压缩效果</p>
                 <button class="test-button" onclick="testCompression()">
                     Start Test
                 </button>
@@ -306,7 +306,6 @@
                 
                 const endTime = performance.now();
                 
-                // 重要：浏览器会自动解压缩响应，blob.size是解压后的大小
                 // 我们需要从响应头获取压缩相关信息
                 const contentLength = response.headers.get('Content-Length');
                 const contentEncoding = response.headers.get('Content-Encoding') || '无压缩';
@@ -319,7 +318,6 @@
                 const decompressedSize = blob.size; // 浏览器已解压，这是原始大小
                 const loadTime = (endTime - startTime).toFixed(2);
 
-                // 关键：Content-Length是服务器发送的压缩后大小
                 // blob.size是浏览器解压后的大小（原始大小）
                 let transferredSize = contentLength ? parseInt(contentLength) : decompressedSize;
                 let originalSize = decompressedSize;

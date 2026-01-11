@@ -230,7 +230,7 @@ HTTP/1.1 200 OK
 Content-Type: text/html
 Content-Length: 1234
 Date: Sat, 11 Jan 2026 12:00:00 GMT
-Server: eslzzyl-webserver
+Server: shaneyale-webserver
 
 &lt;html&gt;...&lt;/html&gt;
             </div>
@@ -246,7 +246,7 @@ HTTP/1.1 200 OK
 Content-Type: image/jpeg
 Content-Length: 335872
 Date: Sat, 11 Jan 2026 12:00:00 GMT
-Server: eslzzyl-webserver
+Server: shaneyale-webserver
             </div>
 
             <h3><span class="method-badge method-options">OPTIONS</span> 查询支持的方法</h3>
@@ -259,11 +259,11 @@ curl -X OPTIONS http://localhost:7878 -i
 HTTP/1.1 204 No Content
 Allow: GET, HEAD, OPTIONS
 Date: Sat, 11 Jan 2026 12:00:00 GMT
-Server: eslzzyl-webserver
+Server: shaneyale-webserver
             </div>
 
             <div class="warning-box">
-                <strong>Warning:</strong> 当前版本不支持 CORS 预检请求 (preflight requests)。
+                <strong>Warning:</strong> 当前版本不支持 CORS 预检请求。
             </div>
 
             <h3><span class="method-badge method-post">POST</span> 提交数据</h3>
@@ -279,7 +279,7 @@ Server: eslzzyl-webserver
 
             <div class="status-code">
                 <strong>204 No Content</strong>
-                <span>请求成功，但没有返回内容（用于 OPTIONS 请求）</span>
+                <span>请求成功，但没有返回内容</span>
             </div>
 
             <div class="status-code">
@@ -299,7 +299,7 @@ Server: eslzzyl-webserver
 
             <div class="status-code">
                 <strong>500 Internal Server Error</strong>
-                <span>服务器内部错误（如 PHP 执行失败）</span>
+                <span>服务器内部错误</span>
             </div>
 
             <div class="status-code">
@@ -329,7 +329,7 @@ Server: eslzzyl-webserver
                     </tr>
                     <tr>
                         <td><strong>Content-Encoding</strong></td>
-                        <td>内容编码方式（压缩）</td>
+                        <td>内容编码方式</td>
                         <td>br, gzip, deflate</td>
                     </tr>
                     <tr>
@@ -388,12 +388,12 @@ Server: eslzzyl-webserver
             </ul>
 
             <div class="code-block">
-<span class="comment">// 请求示例（浏览器自动发送）</span>
+<span class="comment">// 请求示例</span>
 GET /index.html HTTP/1.1
 Host: localhost:7878
 Accept-Encoding: br, gzip, deflate
 
-<span class="comment">// 响应（使用 Brotli 压缩）</span>
+<span class="comment">// 响应</span>
 HTTP/1.1 200 OK
 Content-Type: text/html
 Content-Encoding: br
@@ -405,19 +405,19 @@ Content-Length: 456  <span class="comment">// 压缩后大小</span>
             <h3>Directory Browsing</h3>
             <p>当请求路径指向目录时，服务器返回该目录的文件列表。</p>
             <ul class="feature-list">
-                <li>自动排序（文件夹优先，名称排序）</li>
+                <li>自动排序</li>
                 <li>显示文件大小和修改时间</li>
                 <li>支持超链接导航</li>
-                <li>优雅的表格展示</li>
+                <li>表格展示</li>
             </ul>
 
             <h3>LRU Cache</h3>
-            <p>服务器维护一个 LRU（最近最少使用）文件缓存，自动缓存常访问的文件。</p>
+            <p>服务器维护一个 LRU 文件缓存，自动缓存常访问的文件。</p>
             <ul class="feature-list">
                 <li>自动缓存热门文件</li>
                 <li>检测文件修改时间</li>
                 <li>缓存大小可配置</li>
-                <li>提升响应速度 300%+</li>
+                <li>提升响应速度</li>
             </ul>
 
             <h3>PHP Support</h3>
@@ -429,7 +429,7 @@ curl http://localhost:7878/php/time.php
 <span class="comment">// 服务器调用 php-cgi 执行并返回结果</span>
             </div>
             <div class="warning-box">
-                <strong>Security Warning:</strong> PHP 支持仅用于课程演示，没有安全防护，请勿在生产环境使用！
+                <strong>Security Warning:</strong> PHP 支持仅用于课程演示，没有安全防护，请勿在生产环境使用。
             </div>
 
             <h2>配置说明</h2>
