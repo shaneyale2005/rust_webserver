@@ -23,7 +23,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-
 #[derive(Debug, Clone)]
 pub struct Response {
     version: HttpVersion,
@@ -39,7 +38,6 @@ pub struct Response {
 }
 
 impl Response {
-
     pub fn new() -> Self {
         Self {
             version: HttpVersion::V1_1,
@@ -160,10 +158,12 @@ impl Response {
             None => {
                 debug!("[ID{}]缓存未命中或文件已修改", id);
                 if headonly {
-
                     let path = Path::new(path);
                     let metadata = metadata(path).unwrap();
-                    response.content_type = None;
+                    // HEAD请求也应该返回Content-Type头部
+                    let content_type_str = mime.to_string();
+                    debug!("[ID{}]Content-Type: {}", id, &content_type_str);
+                    response.content_type = Some(content_type_str);
                     response.content = None;
                     // HEAD请求返回原始文件大小（因为我们不进行实际压缩以提高性能）
                     response.content_length = metadata.len();
@@ -269,7 +269,6 @@ impl Response {
         response
     }
 
- 
     fn from_dir(
         path: &str,
         accept_encoding: Vec<HttpEncoding>,
@@ -327,7 +326,6 @@ impl Response {
                 poisoned.into_inner()
             }
         };
-
 
         let cache_key = if is_json {
             format!("{}:json", path)
@@ -443,7 +441,6 @@ impl Response {
         response
     }
 
- 
     fn from_html(
         html: &str,
         accept_encoding: Vec<HttpEncoding>,
@@ -498,7 +495,6 @@ impl Response {
         self
     }
 
-
     fn set_code(&mut self, code: u16) -> &mut Self {
         self.status_code = code;
         self.information = match STATUS_CODES.get(&code) {
@@ -531,7 +527,6 @@ impl Response {
             .to_owned()
     }
 
-  
     pub fn from(
         path: &str,
         request: &Request,
@@ -632,9 +627,10 @@ impl Response {
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
-        if self.content == None {
+        // HEAD 请求可以有 content_type 但没有 content
+        // 只有在没有 content 且没有 content_type 时，content_encoding 才应该为 None
+        if self.content == None && self.content_type == None {
             assert_eq!(self.content_encoding, None);
-            assert_eq!(self.content_type, None);
         }
         // 获取各字段的&str
         let version: &str = match self.version {
@@ -730,7 +726,6 @@ fn format_date(date: &DateTime<Utc>) -> String {
     date.to_rfc2822()
 }
 
-
 fn compress(data: Vec<u8>, mode: Option<HttpEncoding>) -> io::Result<Vec<u8>> {
     let original_size = data.len();
     let result = match mode {
@@ -771,7 +766,6 @@ fn compress(data: Vec<u8>, mode: Option<HttpEncoding>) -> io::Result<Vec<u8>> {
 
     result
 }
-
 
 fn should_skip_compression(mime_type: &str) -> bool {
     let skip_types = [
@@ -1071,5 +1065,30 @@ mod tests {
 
         // 验证日期格式存在
         assert!(response_str.contains("Date: "));
+    }
+
+    #[test]
+    fn test_head_request_response() {
+        use crate::cache::FileCache;
+        use std::sync::{Arc, Mutex};
+
+        let request_str = "HEAD /index.html HTTP/1.1\r\nHost: localhost:7878\r\n\r\n";
+        let buffer = request_str.as_bytes().to_vec();
+        let request = Request::try_from(&buffer, 1).unwrap();
+
+        let cache = Arc::new(Mutex::new(FileCache::from_capacity(10)));
+
+        // 测试 HEAD 请求
+        let response = Response::from("static/index.html", &request, 1, &cache);
+        let bytes = response.as_bytes();
+
+        // HEAD 响应应该包含状态行和头部，但不包含响应体
+        let response_str = String::from_utf8_lossy(&bytes);
+        assert!(response_str.starts_with("HTTP/1.1 200 OK"));
+        assert!(response_str.contains("Content-Length:"));
+        assert!(response_str.contains("Server: eslzzyl-webserver"));
+
+        // HEAD 响应的内容部分应该为空
+        assert!(!response_str.contains("<!DOCTYPE html>"));
     }
 }

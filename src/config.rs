@@ -7,7 +7,6 @@ use log::{error, warn};
 use std::fs::File;
 use std::io::prelude::*;
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     www_root: String,

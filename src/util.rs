@@ -5,7 +5,6 @@ use log::error;
 
 use crate::{exception::Exception, param::STATUS_CODES};
 
-
 pub struct HtmlBuilder {
     title: String,
     css: String,

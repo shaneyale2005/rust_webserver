@@ -4,7 +4,6 @@ use std::time::SystemTime;
 use bytes::Bytes;
 use lru::LruCache;
 
-
 #[derive(Clone)]
 struct CacheEntry {
     content: Bytes,
@@ -26,7 +25,6 @@ impl FileCache {
         }
     }
 
-
     pub fn push(&mut self, filename: &str, bytes: Bytes, modified_time: SystemTime) {
         let entry = CacheEntry {
             content: bytes,
@@ -35,16 +33,13 @@ impl FileCache {
         self.cache.put(filename.to_string(), entry);
     }
 
-
     pub fn find(&mut self, filename: &str, current_modified_time: SystemTime) -> Option<&Bytes> {
         match self.cache.get(filename) {
             Some(entry) => {
                 // 比较修改时间，如果一致则返回缓存内容
                 if entry.modified_time == current_modified_time {
-
                     Some(&entry.content)
                 } else {
-
                     None
                 }
             }

@@ -251,11 +251,13 @@ async fn handle_connection(
         request.user_agent(),
     );
 
-    stream.write(&response.as_bytes()).await.unwrap();
-    stream.flush().await.unwrap();
-    debug!("[ID{}]HTTP响应已写回", id);
+    let response_bytes = response.as_bytes();
+    debug!("[ID{}]响应字节长度: {}", id, response_bytes.len());
+    let write_result = stream.write(&response_bytes).await;
+    debug!("[ID{}]write result: {:?}", id, write_result);
+    let flush_result = stream.flush().await;
+    debug!("[ID{}]flush result: {:?}", id, flush_result);
 }
-
 
 async fn route(path: &str, id: u128, root: &str, is_json: bool) -> Result<PathBuf, Exception> {
     debug!("[ID{}]route: path='{}', is_json={}", id, path, is_json);
