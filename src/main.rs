@@ -193,7 +193,15 @@ async fn handle_connection(
     // 启动timer
     let start_time = Instant::now();
 
-    let request = Request::try_from(&buffer, id).unwrap();
+    let request = match Request::try_from(&buffer, id) {
+        Ok(req) => req,
+        Err(e) => {
+            error!("[ID{}]解析HTTP请求失败: {:?}", id, e);
+            let response = "HTTP/1.1 400 Bad Request\r\nContent-Length: 11\r\n\r\nBad Request";
+            let _ = stream.write_all(response.as_bytes()).await;
+            return;
+        }
+    };
     debug!("[ID{}]成功解析HTTP请求", id);
 
     let is_json = request
@@ -202,7 +210,6 @@ async fn handle_connection(
     let result = route(&request.path(), id, root, is_json).await;
     debug!("[ID{}]HTTP路由解析完毕", id);
 
-    // 如果path不存在，就返回404。使用Response::response_404
     let response = match result {
         Ok(path) => {
             let path_str = match path.to_str() {
