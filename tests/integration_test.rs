@@ -37,7 +37,6 @@ async fn send_request(request: &str, port: u16) -> Result<String, String> {
 fn parse_response(response: &str) -> (u16, Vec<(String, String)>, String) {
     let lines: Vec<&str> = response.split("\r\n").collect();
 
-    // 解析状态行
     let status_line = lines[0];
     let status_code = status_line
         .split_whitespace()
@@ -46,7 +45,6 @@ fn parse_response(response: &str) -> (u16, Vec<(String, String)>, String) {
         .parse::<u16>()
         .unwrap_or(0);
 
-    // 解析头部
     let mut headers = Vec::new();
     let mut i = 1;
     while i < lines.len() && !lines[i].is_empty() {
@@ -56,7 +54,6 @@ fn parse_response(response: &str) -> (u16, Vec<(String, String)>, String) {
         i += 1;
     }
 
-    // 解析主体
     let body = if i + 1 < lines.len() {
         lines[i + 1..].join("\r\n")
     } else {
@@ -71,7 +68,7 @@ mod integration_tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore] // 需要服务器运行时才能通过
+    #[ignore]
     async fn test_get_request_basic() {
         let request = "GET / HTTP/1.1\r\nHost: localhost:7878\r\n\r\n";
 
@@ -80,7 +77,6 @@ mod integration_tests {
                 let (status_code, headers, _body) = parse_response(&response);
                 assert!(status_code == 200 || status_code == 404);
 
-                // 验证必要的响应头
                 let header_map: std::collections::HashMap<String, String> =
                     headers.into_iter().collect();
                 assert!(header_map.contains_key("Content-Length"));
@@ -106,10 +102,8 @@ mod integration_tests {
                     status_code
                 );
 
-                // HEAD 请求不应该有响应体
                 assert!(body.is_empty() || body.chars().all(|c| c == '\0'));
 
-                // 但应该有 Content-Length 头
                 let header_map: std::collections::HashMap<String, String> =
                     headers.into_iter().collect();
                 assert!(header_map.contains_key("Content-Length"));
@@ -130,7 +124,6 @@ mod integration_tests {
                 let (status_code, headers, _body) = parse_response(&response);
                 assert_eq!(status_code, 204);
 
-                // OPTIONS 响应应该包含 Allow 头
                 let header_map: std::collections::HashMap<String, String> =
                     headers.into_iter().collect();
                 assert!(header_map.contains_key("Allow"));
@@ -177,10 +170,8 @@ mod integration_tests {
                 let header_map: std::collections::HashMap<String, String> =
                     headers.into_iter().collect();
 
-                // 如果有响应体，应该有 Content-Encoding 头
                 if let Some(content_length) = header_map.get("Content-Length") {
                     if content_length != "0" {
-                        // 可能有压缩
                         let _ = header_map.get("Content-encoding");
                     }
                 }
