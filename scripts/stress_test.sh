@@ -13,17 +13,19 @@ echo ""
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # 配置
 SERVER_URL="http://127.0.0.1:7878"
 CONCURRENT_LEVELS=(10 50 100 500 1000)
-DURATION=30  # 测试持续时间（秒）
+DURATION=30
+
+ENABLE_AB_HTTP10=${ENABLE_AB_HTTP10:-0}
 
 # 检查服务器是否运行
 check_server() {
     echo -n "检查服务器是否运行... "
-    if curl -s --max-time 2 "$SERVER_URL" > /dev/null 2>&1; then
+    if curl -s --http1.1 --max-time 2 "$SERVER_URL" > /dev/null 2>&1; then
         echo -e "${GREEN}✓${NC} 服务器正在运行"
         return 0
     else
@@ -63,7 +65,7 @@ simple_test() {
 
     for i in {1..10}; do
         local start=$(date +%s%3N)
-        if curl -s --max-time 5 "$SERVER_URL" > /dev/null 2>&1; then
+        if curl -s --http1.1 --max-time 5 "$SERVER_URL" > /dev/null 2>&1; then
             local end=$(date +%s%3N)
             local duration=$((end - start))
             total_time=$((total_time + duration))
@@ -88,6 +90,11 @@ ab_test() {
     echo ""
     echo "=== Apache Bench 压力测试 ==="
 
+    if [ "$ENABLE_AB_HTTP10" != "1" ]; then
+        echo "  使用 wrk 测试（HTTP/1.1）"
+        return 0
+    fi
+
     for concurrent in "${CONCURRENT_LEVELS[@]}"; do
         local requests=$((concurrent * 100))  # 总请求数 = 并发数 * 100
 
@@ -95,7 +102,7 @@ ab_test() {
         echo "并发: $concurrent, 总请求: $requests"
         echo "---"
 
-        ab -n "$requests" -c "$concurrent" -q "$SERVER_URL/" 2>&1 | grep -E "(Requests per second|Time per request|Transfer rate|Failed requests)" || true
+        ab -n "$requests" -c "$concurrent" -k -q "$SERVER_URL/" 2>&1 | grep -E "(Requests per second|Time per request|Transfer rate|Failed requests)" || true
     done
 }
 
@@ -127,7 +134,7 @@ concurrent_curl_test() {
 
     # 启动并发请求
     for i in $(seq 1 $concurrent); do
-        curl -s --max-time 10 "$SERVER_URL" > /dev/null 2>&1 &
+        curl -s --http1.1 --max-time 10 "$SERVER_URL" > /dev/null 2>&1 &
         pids+=($!)
     done
 
@@ -157,7 +164,7 @@ long_running_test() {
     local errors=0
 
     while [ $(date +%s) -lt $end_time ]; do
-        if curl -s --max-time 2 "$SERVER_URL" > /dev/null 2>&1; then
+        if curl -s --http1.1 --max-time 2 "$SERVER_URL" > /dev/null 2>&1; then
             count=$((count + 1))
         else
             errors=$((errors + 1))
@@ -177,7 +184,7 @@ large_file_test() {
     echo "=== 大文件传输测试 ==="
 
     # 检查是否有测试文件
-    if curl -s --head "$SERVER_URL/test-large.bin" 2>&1 | grep "200 OK" > /dev/null; then
+    if curl -s --http1.1 --head "$SERVER_URL/test-large.bin" 2>&1 | grep "200 OK" > /dev/null; then
         echo "测试下载大文件 (10次)..."
 
         local success=0
@@ -185,7 +192,7 @@ large_file_test() {
 
         for i in {1..10}; do
             local output=$(mktemp)
-            if curl -s -w "%{size_download}" -o "$output" "$SERVER_URL/test-large.bin" 2>/dev/null); then
+            if curl -s --http1.1 -w "%{size_download}" -o "$output" "$SERVER_URL/test-large.bin" 2>/dev/null; then
                 local size=$(stat -f%z "$output" 2>/dev/null || stat -c%s "$output" 2>/dev/null)
                 total_size=$((total_size + size))
                 success=$((success + 1))
@@ -225,7 +232,7 @@ memory_leak_test() {
 
     # 发送大量请求
     for i in $(seq 1 1000); do
-        curl -s --max-time 2 "$SERVER_URL" > /dev/null 2>&1 &
+        curl -s --http1.1 --max-time 2 "$SERVER_URL" > /dev/null 2>&1 &
         if [ $((i % 100)) -eq 0 ]; then
             echo -n "."
         fi
@@ -260,8 +267,10 @@ main() {
 
     echo ""
     echo "检查测试工具..."
-    local has_ab=$(check_tool "ab" "brew install apache-bench (macOS) 或 apt install apache2-utils (Ubuntu)")
-    local has_wrk=$(check_tool "wrk" "brew install wrk (macOS) 或从源码编译")
+    check_tool "ab" "brew install apache-bench (macOS) 或 apt install apache2-utils (Ubuntu)"
+    local has_ab=$?
+    check_tool "wrk" "brew install wrk (macOS) 或从源码编译"
+    local has_wrk=$?
 
     echo ""
     echo "================================"
@@ -275,26 +284,14 @@ main() {
     large_file_test
     memory_leak_test
 
-    if [ $? -eq 0 ]; then
+    if [ "$has_ab" -eq 0 ]; then
         ab_test
     fi
 
-    if [ $? -eq 0 ]; then
+    if [ "$has_wrk" -eq 0 ]; then
         wrk_test
     fi
 
-    echo ""
-    echo "================================"
-    echo "压力测试完成！"
-    echo "================================"
-    echo ""
-    echo "建议："
-    echo "1. 检查服务器日志中的错误"
-    echo "2. 使用 'ps aux | grep webserver' 检查进程状态"
-    echo "3. 如果发现性能问题，考虑："
-    echo "   - 增加 worker 线程数"
-    echo "   - 优化缓存大小"
-    echo "   - 使用 perf 或 flamegraph 进行性能分析"
 }
 
 # 运行主函数
