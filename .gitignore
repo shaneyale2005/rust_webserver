@@ -1,0 +1,88 @@
+# ==========================================
+# Rust Build Artifacts
+# ==========================================
+/target/
+**/*.rs.bk
+*.pdb
+
+# ==========================================
+# Logs & Runtime
+# ==========================================
+logs/
+
+# ==========================================
+# Operating System
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==========================================
+# IDE & Editor
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+.vim/
+.vscode/*.log
+
+# ==========================================
+# Frontend (Vue.js)
+# ==========================================
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+frontend/.vite/
+frontend/.eslintcache
+frontend/.parcel-cache
+frontend/.turbo
+frontend/.swc/
+
+# ==========================================
+# Compiled Output
+# ==========================================
+static/browser/
+*.profraw
+*.profdata
+
+# ==========================================
+# Temporary & Cache Files
+# ==========================================
+*.tmp
+*.temp
+.cache/
+.turbo/
+dist-tmp/
+*.pid
+*.seed
+*.pid.lock
+
+# ==========================================
+# Environment Files
+# ==========================================
+.env
+.env.local
+.env.*.local
+
+# ==========================================
+# Claude AI Files
+# ==========================================
+.claude/
+
+# ==========================================
+# Benchmarks & Tests Output
+# ==========================================
+target/criterion/
+*.bench
+test-output/
+coverage/
+*.lcov
+*.coveralls.yml

@@ -1,0 +1,330 @@
+#![allow(clippy::unused_io_amount)]
+
+mod cache;
+mod config;
+mod exception;
+mod param;
+mod request;
+mod response;
+mod util;
+
+use cache::FileCache;
+use config::Config;
+use request::Request;
+use response::Response;
+
+use log::{debug, error, info, warn};
+use log4rs;
+use regex::Regex;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::{TcpListener, TcpStream},
+    runtime::Builder,
+};
+
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
+
+use crate::{exception::Exception, param::HTML_INDEX};
+
+#[tokio::main]
+async fn main() {
+    // 初始化日志系统
+    log4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
+
+    // 加载配置文件
+    let config = Config::from_toml("config/development.toml");
+    info!("配置文件已载入");
+    let root = config.www_root().to_string();
+    info!("www root: {}", &root);
+
+    // 设置工作线程数量
+    let worker_threads = config.worker_threads();
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .build()
+        .unwrap();
+
+    // 初始化文件缓存
+    let cache_size = config.cache_size();
+    let cache = Arc::new(Mutex::new(FileCache::from_capacity(cache_size)));
+
+    // 检测PHP环境
+    let php_result = Command::new("php").arg("-v").output();
+    match php_result {
+        Ok(o) => {
+            if o.status.success() {
+                let output = String::from_utf8_lossy(&o.stdout);
+                // 使用正则表达式捕获版本号
+                let re = Regex::new(r"PHP (\d+\.\d+\.\d+-\dubuntu\d+\.\d+)").unwrap();
+                if let Some(capture) = re.captures(&output) {
+                    if let Some(version) = capture.get(1) {
+                        info!("找到PHP解释器，版本：{}", version.as_str());
+                    }
+                }
+            } else {
+                panic!("在查找PHP解释器时遇到未知错误");
+            }
+        }
+        Err(_) => {
+            warn!("无法找到PHP解释器。服务器将继续运行，但将无法处理PHP请求。");
+        }
+    };
+
+    // 监听端口
+    let port: u16 = config.port();
+    info!("服务端将在{}端口上监听Socket连接", port);
+    // 地址，本地调试用127.0.0.1
+    let address = match config.local() {
+        true => Ipv4Addr::new(127, 0, 0, 1),
+        false => Ipv4Addr::new(0, 0, 0, 0),
+    };
+    info!("服务端将在{}地址上监听Socket连接", address);
+    // 拼接socket
+    let socket = SocketAddrV4::new(address, port);
+
+    // 执行bind
+    let listener = match TcpListener::bind(socket).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            error!("无法绑定端口：{}，错误：{}", port, e);
+            panic!("无法绑定端口：{}，错误：{}", port, e);
+        }
+    };
+    info!("端口{}绑定完成", port);
+
+    // 停机命令标志
+    let shutdown_flag = Arc::new(Mutex::new(false));
+    // 活跃连接计数
+    let active_connection = Arc::new(Mutex::new(0u32));
+
+    // 启动异步命令处理任务
+    runtime.spawn({
+        let shutdown_flag = Arc::clone(&shutdown_flag);
+        let active_connection = Arc::clone(&active_connection);
+        async move {
+            let stdin = tokio::io::stdin();
+            let mut reader = BufReader::new(stdin);
+            let mut input = String::new();
+            loop {
+                input.clear();
+                // 在这里处理命令，可以调用服务器的相关函数或执行其他操作
+                if let Ok(_) = reader.read_line(&mut input).await {
+                    let cmd = input.trim();
+                    match cmd {
+                        "stop" => {
+                            // 如果收到 "stop" 命令，则设置停机标志
+                            let mut flag = shutdown_flag.lock().unwrap();
+                            *flag = true;
+                            break;
+                        }
+                        "help" => {
+                            println!("== Webserver Help ==");
+                            println!("输入stop并再发出一次连接请求以停机");
+                            println!("输入status以查看当前服务器状态");
+                            println!("====================");
+                        }
+                        "status" => {
+                            let active_count = *active_connection.lock().unwrap();
+                            println!("== Webserver 状态 ===");
+                            println!("当前连接数: {}", active_count);
+                            println!("====================");
+                        }
+                        _ => {
+                            println!("无效的命令：{}", cmd);
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+    });
+
+    let mut id: u128 = 0;
+
+    loop {
+        // 检查停机标志，如果设置了停机标志，退出循环
+        if *shutdown_flag.lock().unwrap() {
+            break;
+        }
+        let (mut stream, addr) = listener.accept().await.unwrap();
+        debug!("新的连接：{}", addr);
+
+        let active_connection_arc = Arc::clone(&active_connection);
+        let root_clone = root.clone();
+        let cache_arc = Arc::clone(&cache);
+        debug!("[ID{}]TCP连接已建立", id);
+        tokio::spawn(async move {
+            {
+                let mut lock = active_connection_arc.lock().unwrap();
+                *lock += 1;
+            }
+            handle_connection(&mut stream, id, &root_clone, cache_arc).await;
+            {
+                let mut lock = active_connection_arc.lock().unwrap();
+                *lock -= 1;
+            }
+        });
+        id += 1;
+    }
+}
+
+async fn handle_connection(
+    stream: &mut TcpStream,
+    id: u128,
+    root: &str,
+    cache: Arc<Mutex<FileCache>>,
+) {
+    let mut buffer = vec![0; 1024];
+
+    // 等待tcpstream变得可读
+    stream.readable().await.unwrap();
+
+    match stream.try_read(&mut buffer) {
+        Ok(0) => return,
+        Err(e) => {
+            error!("[ID{}]读取TCPStream时遇到错误: {}", id, e);
+            panic!();
+        }
+        _ => {}
+    }
+    debug!("[ID{}]HTTP请求接收完毕", id);
+
+    // 启动timer
+    let start_time = Instant::now();
+
+    let request = Request::try_from(&buffer, id).unwrap();
+    debug!("[ID{}]成功解析HTTP请求", id);
+
+    let is_json = request
+        .accept()
+        .map_or(false, |a| a.contains("application/json"));
+    let result = route(&request.path(), id, root, is_json).await;
+    debug!("[ID{}]HTTP路由解析完毕", id);
+
+    // 如果path不存在，就返回404。使用Response::response_404
+    let response = match result {
+        Ok(path) => {
+            let path_str = match path.to_str() {
+                Some(s) => s,
+                None => {
+                    let path_str = path.to_str().unwrap();
+                    error!("[ID{}]无法将路径{}转换为str", id, path_str);
+                    return;
+                }
+            };
+            Response::from(path_str, &request, id, &cache)
+        }
+        Err(Exception::FileNotFound) => {
+            warn!(
+                "[ID{}]请求的路径：{} 不存在，返回404响应",
+                id,
+                &request.path()
+            );
+            Response::response_404(&request, id)
+        }
+        Err(e) => {
+            panic!("非法的错误类型：{}", e);
+        }
+    };
+
+    debug!(
+        "[ID{}]HTTP响应构建完成，服务端用时{}ms。",
+        id,
+        start_time.elapsed().as_millis()
+    );
+
+    info!(
+        "[ID{}] {}, {}, {}, {}, {}, {}, ",
+        id,
+        request.version(),
+        request.path(),
+        request.method(),
+        response.status_code(),
+        response.information(),
+        request.user_agent(),
+    );
+
+    stream.write(&response.as_bytes()).await.unwrap();
+    stream.flush().await.unwrap();
+    debug!("[ID{}]HTTP响应已写回", id);
+}
+
+
+async fn route(path: &str, id: u128, root: &str, is_json: bool) -> Result<PathBuf, Exception> {
+    debug!("[ID{}]route: path='{}', is_json={}", id, path, is_json);
+    if path == "/" {
+        debug!("[ID{}]请求路径为根目录", id);
+        // 如果是JSON请求（Vue文件管理器），返回根目录以生成文件列表
+        if is_json {
+            debug!("[ID{}]JSON请求，返回根目录生成文件列表", id);
+            let root_path = PathBuf::from(root);
+            return Ok(root_path);
+        }
+        // 否则检查 index.html 是否存在
+        let index_path = PathBuf::from(HTML_INDEX);
+        if index_path.exists() {
+            debug!("[ID{}]index.html存在，返回index", id);
+            return Ok(index_path);
+        } else {
+            // index.html 不存在，返回根目录以生成文件列表
+            debug!("[ID{}]index.html不存在，返回根目录", id);
+            let root_path = PathBuf::from(root);
+            return Ok(root_path);
+        }
+    } else if path == "/browser/" || path == "/browser" {
+        // Vue文件管理器
+        if is_json {
+            // 如果是JSON请求，返回browser目录的内容列表
+            debug!("[ID{}]JSON请求browser目录，返回目录列表", id);
+            let browser_path = PathBuf::from("static/browser");
+            if browser_path.exists() && browser_path.is_dir() {
+                return Ok(browser_path);
+            }
+        }
+        // 如果不是JSON请求，总是返回index.html
+        debug!("[ID{}]请求Vue文件管理器HTML页面", id);
+        let browser_index = PathBuf::from("static/browser/index.html");
+        if browser_index.exists() {
+            return Ok(browser_index);
+        } else {
+            // 如果index.html不存在，返回404
+            error!("[ID{}]Vue文件管理器的index.html不存在", id);
+            return Err(Exception::FileNotFound);
+        }
+    } else if path == "*" {
+        // 常见于OPTIONS方法
+        debug!("[ID{}]请求路径为*", id);
+        let path = PathBuf::from("*");
+        return Ok(path);
+    }
+    let mut path_str = path.to_string();
+    path_str.remove(0);
+    let path_without_slash = Path::new(&path_str);
+    let root = Path::new(root);
+    let full_path = root.join(path_without_slash);
+    debug!("[ID{}]请求文件路径：{}", id, full_path.to_str().unwrap());
+    match full_path.exists() {
+        true => Ok(full_path),
+        false => {
+            if path.starts_with("/browser/") || path.starts_with("/browser") {
+                debug!(
+                    "[ID{}]文件不存在但路径在/browser下，尝试作为SPA路由处理",
+                    id
+                );
+                let browser_index = PathBuf::from("static/browser/index.html");
+                if browser_index.exists() {
+                    debug!("[ID{}]返回Vue应用的index.html以支持客户端路由", id);
+                    return Ok(browser_index);
+                }
+            }
+            Err(Exception::FileNotFound)
+        }
+    }
+}

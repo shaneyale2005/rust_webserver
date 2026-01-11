@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTTP 压缩测试 - Rust Web Server</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --cream: #FAF7F0;
+            --sand: #E8DCC4;
+            --tan: #D4C5A9;
+            --brown: #9C8671;
+            --dark-brown: #6B5D52;
+            --darker-brown: #4A3F35;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--cream) 0%, var(--sand) 50%, var(--cream) 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 950px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            padding: 3rem;
+            box-shadow: 0 10px 40px rgba(107, 93, 82, 0.15);
+            margin-bottom: 2rem;
+            border: 1px solid var(--tan);
+        }
+
+        h1 {
+            font-family: 'Inter', sans-serif;
+            color: var(--darker-brown);
+            margin-bottom: 1rem;
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.9rem 1.8rem;
+            background: var(--brown);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(156, 134, 113, 0.25);
+            border: 1px solid var(--tan);
+            margin-bottom: 2rem;
+        }
+
+        .back-button:hover {
+            background: var(--dark-brown);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(156, 134, 113, 0.35);
+        }
+
+        .test-section {
+            background: var(--cream);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+            border: 1px solid var(--tan);
+        }
+
+        .test-section h3 {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.4rem;
+            color: var(--darker-brown);
+            margin-bottom: 1rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+
+        .test-button {
+            background: var(--brown);
+            color: white;
+            border: 1px solid var(--tan);
+            padding: 1rem 2.5rem;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .test-button:hover {
+            background: var(--dark-brown);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(156, 134, 113, 0.35);
+        }
+
+        .result-box {
+            background: white;
+            border: 1px solid var(--tan);
+            border-radius: 10px;
+            padding: 1.8rem;
+            margin-top: 1.5rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.9;
+            color: var(--darker-brown);
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .stat-item {
+            background: linear-gradient(135deg, var(--sand) 0%, var(--tan) 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            text-align: center;
+            border: 1px solid var(--brown);
+        }
+
+        .stat-value {
+            font-family: 'Inter', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 0.8rem;
+            color: var(--darker-brown);
+        }
+
+        .stat-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--dark-brown);
+        }
+
+        .encoding-badge {
+            display: inline-block;
+            background: var(--brown);
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 0.3rem;
+            border: 1px solid var(--tan);
+            font-weight: 600;
+        }
+
+        .info-text {
+            color: var(--dark-brown);
+            font-size: 0.95rem;
+            line-height: 1.7;
+            margin: 1rem 0;
+        }
+
+        .highlight {
+            background: var(--sand);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            color: var(--darker-brown);
+        }
+
+        .loading {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .card {
+                padding: 2rem;
+            }
+
+            .stat-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div>
+                <a href="/" class="back-button">← 返回首页</a>
+            </div>
+            <h1>HTTP Compression Test</h1>
+            <p class="info-text">
+                本服务器支持多种HTTP压缩算法，包括 <span class="highlight">Brotli</span>、<span class="highlight">Gzip</span> 和 <span class="highlight">Deflate</span>。
+                服务器会根据客户端的 Accept-Encoding 请求头自动选择最优的压缩算法。本测试使用 <span class="highlight">19MB大文本文件</span> 验证压缩效果。
+            </p>
+
+            <div class="test-section">
+                <h3>Connection Info</h3>
+                <div class="result-box" id="connectionInfo">
+                    检测中...
+                </div>
+            </div>
+
+            <div class="test-section">
+                <h3>Compression Test</h3>
+                <p class="info-text">点击按钮测试大文本文件（19MB）的Gzip压缩效果</p>
+                <button class="test-button" onclick="testCompression()">
+                    Start Test
+                </button>
+                <div class="result-box" id="testResult" style="display: none;">
+                    测试结果将在这里显示...
+                </div>
+            </div>
+
+            <div class="test-section">
+                <h3>Supported Algorithms</h3>
+                <div style="margin-top: 1rem;">
+                    <span class="encoding-badge">Brotli (br)</span>
+                    <span class="encoding-badge">Gzip (gzip)</span>
+                    <span class="encoding-badge">Deflate (deflate)</span>
+                </div>
+                <p class="info-text" style="margin-top: 1.5rem;">
+                    <strong>Priority:</strong> Brotli > Gzip > Deflate > None
+                </p>
+            </div>
+
+            <div class="test-section">
+                <h3>Real-time Statistics</h3>
+                <div class="stat-grid">
+                    <div class="stat-item">
+                        <span class="stat-value" id="compressionRatio">-</span>
+                        <span class="stat-label">Compression Ratio</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="originalSize">-</span>
+                        <span class="stat-label">Original Size</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="compressedSize">-</span>
+                        <span class="stat-label">Compressed Size</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 检测当前连接的压缩支持
+        function detectCompression() {
+            const info = document.getElementById('connectionInfo');
+            const acceptEncoding = 'br, gzip, deflate';
+            
+            info.innerHTML = `
+                <strong>浏览器支持的编码:</strong><br>
+                ${acceptEncoding}<br><br>
+                <strong>当前页面编码:</strong><br>
+                ${document.characterSet}<br><br>
+                <strong>User-Agent:</strong><br>
+                ${navigator.userAgent.substring(0, 100)}...
+            `;
+        }
+
+        // 测试压缩效果
+        async function testCompression() {
+            const resultBox = document.getElementById('testResult');
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = '<span class="loading">⏳</span> 正在测试压缩效果...';
+
+            try {
+                const startTime = performance.now();
+                // 浏览器的fetch API会自动处理压缩，Accept-Encoding头由浏览器自动添加
+                console.log('开始请求 /large_text.txt');
+                // 不手动设置Accept-Encoding，让浏览器自动处理
+                const response = await fetch('/large_text.txt', {
+                    method: 'GET'
+                });
+                
+                console.log('响应状态:', response.status);
+                console.log('响应头:', [...response.headers.entries()]);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP错误! 状态: ${response.status} ${response.statusText}`);
+                }
+                
+                const endTime = performance.now();
+                
+                // 重要：浏览器会自动解压缩响应，blob.size是解压后的大小
+                // 我们需要从响应头获取压缩相关信息
+                const contentLength = response.headers.get('Content-Length');
+                const contentEncoding = response.headers.get('Content-Encoding') || '无压缩';
+                const contentType = response.headers.get('Content-Type');
+                
+                console.log('Content-Encoding:', contentEncoding);
+                console.log('Content-Length (from header):', contentLength);
+                
+                const blob = await response.blob();
+                const decompressedSize = blob.size; // 浏览器已解压，这是原始大小
+                const loadTime = (endTime - startTime).toFixed(2);
+
+                // 关键：Content-Length是服务器发送的压缩后大小
+                // blob.size是浏览器解压后的大小（原始大小）
+                let transferredSize = contentLength ? parseInt(contentLength) : decompressedSize;
+                let originalSize = decompressedSize;
+                
+                // 如果没有压缩，两者相同
+                if (contentEncoding === '无压缩' || !contentEncoding || contentEncoding === 'identity') {
+                    transferredSize = originalSize;
+                }
+                
+                const compressionRatio = originalSize > 0 && transferredSize < originalSize
+                    ? ((1 - transferredSize / originalSize) * 100).toFixed(1)
+                    : '0';
+
+                console.log('测试完成 - 传输大小:', transferredSize, '原始大小:', originalSize, '压缩率:', compressionRatio);
+
+                resultBox.innerHTML = `
+                    <strong>测试完成!</strong><br><br>
+                    <strong>Content-Encoding:</strong> ${contentEncoding}<br>
+                    <strong>Content-Type:</strong> ${contentType}<br>
+                    <strong>原始大小:</strong> ${formatBytes(originalSize)}<br>
+                    <strong>传输大小:</strong> ${formatBytes(transferredSize)}<br>
+                    <strong>节省流量:</strong> ${formatBytes(originalSize - transferredSize)}<br>
+                    <strong>加载时间:</strong> ${loadTime} ms<br>
+                    <strong>压缩率:</strong> ${compressionRatio}%
+                `;
+
+                document.getElementById('compressionRatio').textContent = compressionRatio + '%';
+                document.getElementById('originalSize').textContent = formatBytes(originalSize);
+                document.getElementById('compressedSize').textContent = formatBytes(transferredSize);
+
+            } catch (error) {
+                console.error('压缩测试失败:', error);
+                resultBox.innerHTML = `
+                    <strong>测试失败</strong><br><br>
+                    <strong>错误:</strong> ${error.message}<br><br>
+                    <small style="color: var(--dark-brown);">
+                    可能的原因：<br>
+                    1. 服务器未运行或无法访问<br>
+                    2. large_text.txt文件不存在<br>
+                    3. 网络连接问题<br>
+                    4. 服务器压缩处理异常<br>
+                    5. 文件过大导致超时<br><br>
+                    请检查浏览器控制台获取更多信息
+                    </small>
+                `;
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+        }
+
+        // 页面加载时检测
+        window.onload = detectCompression;
+    </script>
+</body>
+</html>

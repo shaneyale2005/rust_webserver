@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Base Styles */
+body {
+  @apply bg-cream text-darker-brown antialiased font-sans;
+}
+
+/* Elegant Shadow Effects */
+.elegant-shadow {
+  box-shadow: 0 10px 40px rgba(107, 93, 82, 0.12);
+}
+
+.hover-shadow {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-shadow:hover {
+  box-shadow: 0 20px 50px rgba(107, 93, 82, 0.18);
+  transform: translateY(-2px);
+}

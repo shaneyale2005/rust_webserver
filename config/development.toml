@@ -1,0 +1,5 @@
+www_root = "./static/"
+port = 7878
+worker_threads = 0
+cache_size = 10
+local = true

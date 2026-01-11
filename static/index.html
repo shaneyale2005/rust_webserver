@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust Web Server - 高性能异步服务器</title>
+    <link rel="icon" href="/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --cream: #FAF7F0;
+            --sand: #E8DCC4;
+            --tan: #D4C5A9;
+            --brown: #9C8671;
+            --dark-brown: #6B5D52;
+            --darker-brown: #4A3F35;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.7;
+            color: var(--darker-brown);
+            background: linear-gradient(135deg, var(--cream) 0%, var(--sand) 50%, var(--cream) 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            padding: 4rem 1rem;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.8s ease;
+        }
+
+        header h1 {
+            font-family: 'Inter', sans-serif;
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            color: var(--darker-brown);
+            letter-spacing: -0.02em;
+        }
+
+        header p {
+            font-size: 1.25rem;
+            color: var(--brown);
+            font-weight: 400;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: var(--brown);
+            color: white;
+            padding: 0.7rem 1.8rem;
+            border-radius: 30px;
+            margin-top: 1.5rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            animation: pulse 2s infinite;
+            border: 2px solid var(--tan);
+            font-size: 0.9rem;
+        }
+
+        /* Main Card */
+        .main-card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            padding: 3rem;
+            box-shadow: 0 10px 40px rgba(107, 93, 82, 0.15);
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.8s ease;
+            border: 1px solid var(--tan);
+        }
+
+        .main-card h2 {
+            font-family: 'Inter', sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--darker-brown);
+            margin-bottom: 2rem;
+            text-align: center;
+            letter-spacing: -0.01em;
+            border-bottom: 2px solid var(--tan);
+            padding-bottom: 1rem;
+        }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, var(--sand) 0%, var(--tan) 100%);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 12px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+            border: 1px solid var(--brown);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 50px rgba(107, 93, 82, 0.25);
+        }
+
+        .feature-card h3 {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.4rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+            color: var(--darker-brown);
+        }
+
+        .feature-card p {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: var(--dark-brown);
+        }
+
+        /* Stats Section */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.85);
+            padding: 2rem;
+            border-radius: 12px;
+            text-align: center;
+            border-left: 4px solid var(--brown);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-value {
+            font-family: 'Inter', sans-serif;
+            font-size: 2.8rem;
+            font-weight: 700;
+            color: var(--brown);
+            display: block;
+        }
+
+        .stat-label {
+            font-family: 'Inter', sans-serif;
+            color: var(--dark-brown);
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+
+        /* Demo Links */
+        .demo-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .demo-link {
+            display: block;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.85);
+            border: 2px solid var(--tan);
+            border-radius: 12px;
+            text-decoration: none;
+            color: var(--darker-brown);
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .demo-link:hover {
+            border-color: var(--brown);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(156, 134, 113, 0.25);
+            background: white;
+        }
+
+        .demo-link h4 {
+            font-family: 'Inter', sans-serif;
+            color: var(--brown);
+            margin-bottom: 0.8rem;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .demo-link p {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--dark-brown);
+        }
+
+        /* Tech Stack */
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+
+        .tech-badge {
+            background: var(--brown);
+            color: white;
+            padding: 0.6rem 1.4rem;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: 2px solid var(--tan);
+            transition: all 0.3s ease;
+        }
+
+        .tech-badge:hover {
+            background: var(--dark-brown);
+            transform: scale(1.05);
+        }
+
+        /* Animations */
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(40px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.8;
+            }
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            color: var(--dark-brown);
+            padding: 3rem 2rem;
+            margin-top: 4rem;
+            border-top: 2px solid var(--tan);
+        }
+
+        footer p {
+            font-family: 'Inter', sans-serif;
+            font-weight: 400;
+        }
+
+        footer a {
+            color: var(--brown);
+            text-decoration: none;
+            border-bottom: 2px solid var(--tan);
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        footer a:hover {
+            color: var(--darker-brown);
+            border-bottom-color: var(--brown);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2.5rem;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            .main-card {
+                padding: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Rust Web Server</h1>
+            <p>基于 Tokio 的高性能异步 HTTP 服务器</p>
+            <div class="status-badge">Server Running</div>
+        </header>
+
+        <div class="main-card">
+            <h2>Core Features</h2>
+            
+            <div class="features">
+                <div class="feature-card">
+                    <h3>Async Concurrency</h3>
+                    <p>基于 Tokio 运行时，支持高并发请求处理，单机轻松承载万级并发连接</p>
+                </div>
+
+                <div class="feature-card">
+                    <h3>HTTP Compression</h3>
+                    <p>支持 Brotli、Gzip、Deflate 多种压缩算法，自动协商最优压缩方式</p>
+                </div>
+
+                <div class="feature-card">
+                    <h3>LRU Cache</h3>
+                    <p>智能文件缓存系统，减少磁盘 I/O，提升响应速度高达 300%</p>
+                </div>
+
+                <div class="feature-card">
+                    <h3>Directory Browser</h3>
+                    <p>优雅的文件列表界面，支持排序和导航，提供完整的目录结构展示</p>
+                </div>
+
+                <div class="feature-card">
+                    <h3>Type Safety</h3>
+                    <p>Rust 语言保证内存安全，零成本抽象，无 GC 暂停</p>
+                </div>
+
+                <div class="feature-card">
+                    <h3>Logging System</h3>
+                    <p>完整的请求日志记录，支持滚动日志文件，便于监控和调试</p>
+                </div>
+            </div>
+
+            <h2>Performance Metrics</h2>
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-value">10K+</span>
+                    <span class="stat-label">Concurrent Connections</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">&lt;1ms</span>
+                    <span class="stat-label">Average Response Time</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">HTTP/1.1</span>
+                    <span class="stat-label">Protocol Support</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">70%+</span>
+                    <span class="stat-label">Compression Ratio</span>
+                </div>
+            </div>
+
+            <h2>Feature Demos</h2>
+            <div class="demo-links">
+                <a href="/browser/" class="demo-link">
+                    <h4>File Browser</h4>
+                    <p>现代化Vue文件管理界面</p>
+                </a>
+                <a href="/demo/compression.html" class="demo-link">
+                    <h4>Compression Test</h4>
+                    <p>测试不同压缩算法的效果</p>
+                </a>
+                <a href="/demo/performance.html" class="demo-link">
+                    <h4>Performance Test</h4>
+                    <p>实时性能指标监控</p>
+                </a>
+                <a href="/demo/api-docs.html" class="demo-link">
+                    <h4>API Documentation</h4>
+                    <p>HTTP 方法和状态码说明</p>
+                </a>
+                <a href="/php/time.php" class="demo-link">
+                    <h4>PHP Support</h4>
+                    <p>动态页面处理演示</p>
+                </a>
+            </div>
+
+            <h2>Tech Stack</h2>
+            <div class="tech-stack">
+                <span class="tech-badge">Rust 2021</span>
+                <span class="tech-badge">Tokio</span>
+                <span class="tech-badge">Async/Await</span>
+                <span class="tech-badge">Brotli</span>
+                <span class="tech-badge">LRU Cache</span>
+                <span class="tech-badge">Log4rs</span>
+                <span class="tech-badge">Regex</span>
+                <span class="tech-badge">Serde</span>
+                <span class="tech-badge">Criterion</span>
+            </div>
+        </div>
+
+        <footer>
+            <p>
+                Made with Rust | 
+                <a href="https://github.com/Eslzzyl/webserver" target="_blank">GitHub</a> | 
+                合肥工业大学宣城校区计算机网络课程设计
+            </p>
+            <p style="margin-top: 1rem;">
+                © 2026 高性能 Web 服务器实现
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
