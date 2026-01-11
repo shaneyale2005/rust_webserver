@@ -218,13 +218,10 @@ mod security_tests {
     async fn test_slowloris_single() {
         match TcpStream::connect("127.0.0.1:7878").await {
             Ok(mut stream) => {
-                // 发送部分请求
                 let _ = stream.write_all(b"GET / HTTP/1.1\r\n").await;
 
-                // 等待一段时间
                 tokio::time::sleep(Duration::from_secs(3)).await;
 
-                // 尝试完成请求
                 let result = stream.write_all(b"Host: localhost\r\n\r\n").await;
 
                 println!("慢速攻击测试 - 写入结果: {:?}", result);
