@@ -104,8 +104,7 @@ mod security_tests {
                     status
                 );
             }
-            Err(_) => {
-            }
+            Err(_) => {}
         }
     }
 
@@ -217,7 +216,6 @@ mod security_tests {
     #[tokio::test]
     #[ignore]
     async fn test_slowloris_single() {
-
         match TcpStream::connect("127.0.0.1:7878").await {
             Ok(mut stream) => {
                 // 发送部分请求

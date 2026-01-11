@@ -1,24 +1,37 @@
-use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use std::process::Command;
 
 async fn send_request(request: &str, port: u16) -> Result<String, String> {
-    let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
-        .await
+    let method = request.split_whitespace().next().unwrap_or("GET");
+    let path = request.split_whitespace().nth(1).unwrap_or("/");
+
+    let url = format!("http://127.0.0.1:{}{}", port, path);
+    let mut args = vec!["-s", "--noproxy", "*", "-i"];
+
+    if method == "HEAD" {
+        args.push("-I");
+    } else if method != "GET" {
+        args.push("-X");
+        args.push(method);
+    }
+
+    args.push(&url);
+
+    let output = Command::new("curl")
+        .args(&args)
+        .output()
         .map_err(|e| e.to_string())?;
 
-    stream
-        .write_all(request.as_bytes())
-        .await
-        .map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    let mut buffer = vec![0; 4096];
-    let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buffer))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "curl failed (status {}): {}",
+            output.status, stderr
+        ));
+    }
 
-    Ok(String::from_utf8_lossy(&buffer[..n]).to_string())
+    Ok(stdout)
 }
 
 fn parse_response(response: &str) -> (u16, Vec<(String, String)>, String) {
@@ -87,7 +100,11 @@ mod integration_tests {
         match send_request(request, 7878).await {
             Ok(response) => {
                 let (status_code, headers, body) = parse_response(&response);
-                assert!(status_code == 200 || status_code == 404);
+                assert!(
+                    status_code == 200 || status_code == 404,
+                    "Expected 200 or 404, got {}",
+                    status_code
+                );
 
                 // HEAD 请求不应该有响应体
                 assert!(body.is_empty() || body.chars().all(|c| c == '\0'));
