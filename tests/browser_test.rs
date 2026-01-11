@@ -81,15 +81,13 @@ mod browser_tests {
     }
 
     #[test]
-    #[ignore] // 需要服务器运行才能测试
+    #[ignore]
     fn test_browser_second_visit_subdirectory_returns_json() {
         println!("测试2：访问子目录（如/assets）应返回JSON");
 
-        // 先访问根目录
         let _response1 = send_request("/", true).expect("第一次请求失败");
         println!("第一次访问根目录完成");
 
-        // 再访问子目录
         thread::sleep(Duration::from_millis(100));
         let response2 = send_request("/assets", true).expect("第二次请求失败");
 
@@ -109,7 +107,7 @@ mod browser_tests {
     }
 
     #[test]
-    #[ignore] // 需要服务器运行才能测试
+    #[ignore]
     fn test_browser_multiple_subdirectory_visits() {
         println!("测试3：多次访问不同子目录都应返回JSON");
 
@@ -140,7 +138,7 @@ mod browser_tests {
     }
 
     #[test]
-    #[ignore] // 需要服务器运行才能测试
+    #[ignore]
     fn test_browser_without_json_accept_header_returns_html() {
         println!("测试4：没有Accept: application/json头的请求应返回HTML");
         let response = send_request("/", false).expect("请求失败");
