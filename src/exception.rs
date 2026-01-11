@@ -6,6 +6,7 @@ pub enum Exception {
     UnSupportedRequestMethod,
     UnsupportedHttpVersion,
     FileNotFound,
+    InvalidPath,
     PHPExecuteFailed,
     PHPCodeError,
 }
@@ -19,6 +20,7 @@ impl fmt::Display for Exception {
             UnSupportedRequestMethod => write!(f, "Unsupported request method"),
             UnsupportedHttpVersion => write!(f, "Unsupported HTTP version"),
             FileNotFound => write!(f, "File not found (404)"),
+            InvalidPath => write!(f, "Invalid path (400)"),
             PHPExecuteFailed => write!(f, "Couldn't invoke PHP interpreter"),
             PHPCodeError => write!(f, "An error happened in php code"),
         }

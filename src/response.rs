@@ -527,6 +527,16 @@ impl Response {
             .to_owned()
     }
 
+    /// 预设的400 Response
+    pub fn response_400(request: &Request, id: u128) -> Self {
+        let accept_encoding = request.accept_encoding().to_vec();
+        Self::from_status_code(400, accept_encoding, id)
+            .set_date()
+            .set_code(400)
+            .set_version()
+            .to_owned()
+    }
+
     pub fn from(
         path: &str,
         request: &Request,

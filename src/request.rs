@@ -24,8 +24,14 @@ impl Request {
 
         let request_lines: Vec<&str> = request_string.split(CRLF).collect();
 
-        let first_line: Vec<&str> = request_lines[0].split(" ").collect();
-        let method_str = first_line[0].to_uppercase();
+        let first_line_parts: Vec<&str> = request_lines[0].split(" ").collect();
+
+        if first_line_parts.len() < 3 {
+            error!("[ID{}]HTTP请求行格式不正确：{}", id, request_lines[0]);
+            return Err(Exception::UnSupportedRequestMethod);
+        }
+
+        let method_str = first_line_parts[0].to_uppercase();
         let method = match method_str.as_str() {
             "GET" => HttpRequestMethod::Get,
             "HEAD" => HttpRequestMethod::Head,
@@ -36,14 +42,20 @@ impl Request {
                 return Err(Exception::UnSupportedRequestMethod);
             }
         };
-        let path = first_line[1].to_string();
-        let version_str = first_line[2].to_uppercase();
+
+        let version_str = first_line_parts.last().unwrap().to_uppercase();
         let version = match version_str.as_str() {
-            r"HTTP/1.1" => HttpVersion::V1_1,
+            "HTTP/1.1" => HttpVersion::V1_1,
             _ => {
                 error!("[ID{}]不支持的HTTP协议版本：{}", id, &version_str);
                 return Err(Exception::UnsupportedHttpVersion);
             }
+        };
+
+        let path = if first_line_parts.len() == 3 {
+            first_line_parts[1].to_string()
+        } else {
+            first_line_parts[1..first_line_parts.len() - 1].join(" ")
         };
 
         let mut user_agent = "".to_string();

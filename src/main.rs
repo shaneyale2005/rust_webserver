@@ -229,6 +229,18 @@ async fn handle_connection(
             );
             Response::response_404(&request, id)
         }
+        Err(Exception::InvalidPath) => {
+            warn!(
+                "[ID{}]请求的路径：{} 包含非法字符，返回400响应",
+                id,
+                &request.path()
+            );
+            Response::response_400(&request, id)
+        }
+        Err(Exception::UnsupportedHttpVersion) => {
+            warn!("[ID{}]请求的HTTP协议版本不支持，返回400响应", id);
+            Response::response_400(&request, id)
+        }
         Err(e) => {
             panic!("非法的错误类型：{}", e);
         }
@@ -311,7 +323,19 @@ async fn route(path: &str, id: u128, root: &str, is_json: bool) -> Result<PathBu
     let path_without_slash = Path::new(&path_str);
     let root = Path::new(root);
     let full_path = root.join(path_without_slash);
-    debug!("[ID{}]请求文件路径：{}", id, full_path.to_str().unwrap());
+
+    let path_str_ref = match full_path.to_str() {
+        Some(s) => s,
+        None => {
+            error!(
+                "[ID{}]无法将路径{}转换为有效的UTF-8字符串",
+                id,
+                full_path.display()
+            );
+            return Err(Exception::InvalidPath);
+        }
+    };
+    debug!("[ID{}]请求文件路径：{}", id, path_str_ref);
     match full_path.exists() {
         true => Ok(full_path),
         false => {
