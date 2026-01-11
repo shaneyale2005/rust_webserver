@@ -24,9 +24,7 @@ impl HtmlBuilder {
             "
         .to_string();
         let description = match note {
-            // 如果有自定义说明，则使用自定义说明
             Some(n) => n,
-            // 否则，使用预定义的状态码说明
             None => match STATUS_CODES.get(&code) {
                 Some(d) => *d,
                 None => {
@@ -54,12 +52,10 @@ impl HtmlBuilder {
         sort_dir_entries(dir_vec);
 
         let mut path_mut = path;
-        // 如果path是以"/"结尾的，就移除它
         if path_mut.ends_with("/") {
             let len = path_mut.len();
             path_mut = &path_mut[..(len - 1)];
         }
-        // 下面的`<hr>`添加了一条水平分割线
         body.push_str(&format!("<h1>{}的文件列表</h1><hr>", path_mut));
         body.push_str("<table>");
         body.push_str(
@@ -78,7 +74,6 @@ impl HtmlBuilder {
         );
         for entry in dir_vec {
             let metadata = entry.metadata().unwrap();
-            // 使用本地时区格式化为当前本地时间
             let local_time: DateTime<Local> = metadata.modified().unwrap().into();
             let formatted_time = local_time.format("%Y-%m-%d %H:%M:%S %Z").to_string();
 
@@ -110,7 +105,6 @@ impl HtmlBuilder {
                     &filename, &filename, &formatted_time
                 ));
             } else {
-                // 虽然我觉得这个条件永远不会被访问到。
                 panic!();
             }
         }
@@ -141,11 +135,10 @@ impl HtmlBuilder {
         }
     }
 
-    /// 构建一个`HtmlBuilder`
     pub fn build(&self) -> String {
         format!(
             r##"<!DOCTYPE html>
-            <!-- 本文件由Eslzzyl的Rust Webserver自动生成 -->
+            <!-- 本文件由shaneyale的Rust Webserver自动生成 -->
             <html>
                 <head>
                     <meta charset="utf-8">
@@ -190,7 +183,6 @@ fn sort_dir_entries(vec: &mut Vec<PathBuf>) {
     });
 }
 
-/// 处理对PHP文件的请求
 pub fn handle_php(path: &str, id: u128) -> Result<String, Exception> {
     let result = Command::new("php")
         .arg(path) // PHP文件路径
@@ -201,11 +193,9 @@ pub fn handle_php(path: &str, id: u128) -> Result<String, Exception> {
     };
 
     if output.status.success() {
-        // 执行完毕
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(String::from(stdout))
     } else {
-        // 解释器出错
         let stderr = String::from_utf8_lossy(&output.stderr);
         error!("[ID{}]PHP解释器出错：{}", id, stderr);
         Err(Exception::PHPCodeError)
@@ -280,7 +270,6 @@ mod tests {
 
     #[test]
     fn test_html_builder_various_codes() {
-        // 测试各种状态码
         for code in [200, 201, 204, 400, 401, 403, 404, 500, 502, 503] {
             let html = HtmlBuilder::from_status_code(code, None).build();
             assert!(html.contains(&code.to_string()));
@@ -290,12 +279,10 @@ mod tests {
 
     #[test]
     fn test_sort_dir_entries() {
-        // 创建测试用的路径向量
         let mut entries = vec![PathBuf::from("file1.txt"), PathBuf::from("file2.txt")];
 
         sort_dir_entries(&mut entries);
 
-        // 验证排序后文件按字母顺序排列
         assert_eq!(entries[0].file_name().unwrap(), "file1.txt");
         assert_eq!(entries[1].file_name().unwrap(), "file2.txt");
     }
@@ -304,7 +291,6 @@ mod tests {
     fn test_html_builder_structure() {
         let html = HtmlBuilder::from_status_code(404, Some("测试")).build();
 
-        // 验证HTML结构完整性
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("<html>"));
         assert!(html.contains("</html>"));
@@ -321,7 +307,6 @@ mod tests {
 
     #[test]
     fn test_format_file_size_edge_cases() {
-        // 测试边界情况
         assert_eq!(format_file_size(1024 - 1), "1023.0 B");
         assert_eq!(format_file_size(1024), "1.0 KB");
         assert_eq!(format_file_size(1024 * 1024 - 1), "1024.0 KB");

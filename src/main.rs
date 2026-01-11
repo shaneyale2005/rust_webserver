@@ -34,33 +34,27 @@ use crate::{exception::Exception, param::HTML_INDEX};
 
 #[tokio::main]
 async fn main() {
-    // 初始化日志系统
     log4rs::init_file("config/log4rs.yaml", Default::default()).unwrap();
 
-    // 加载配置文件
     let config = Config::from_toml("config/development.toml");
     info!("配置文件已载入");
     let root = config.www_root().to_string();
     info!("www root: {}", &root);
 
-    // 设置工作线程数量
     let worker_threads = config.worker_threads();
     let runtime = Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .build()
         .unwrap();
 
-    // 初始化文件缓存
     let cache_size = config.cache_size();
     let cache = Arc::new(Mutex::new(FileCache::from_capacity(cache_size)));
 
-    // 检测PHP环境
     let php_result = Command::new("php").arg("-v").output();
     match php_result {
         Ok(o) => {
             if o.status.success() {
                 let output = String::from_utf8_lossy(&o.stdout);
-                // 使用正则表达式捕获版本号
                 let re = Regex::new(r"PHP (\d+\.\d+\.\d+-\dubuntu\d+\.\d+)").unwrap();
                 if let Some(capture) = re.captures(&output) {
                     if let Some(version) = capture.get(1) {

@@ -28,19 +28,16 @@ impl Config {
     }
 
     pub fn from_toml(filename: &str) -> Self {
-        // 打开文件
         let mut file = match File::open(filename) {
             Ok(f) => f,
             Err(e) => panic!("no such file {} exception:{}", filename, e),
         };
-        // 读文件到str
         let mut str_val = String::new();
         match file.read_to_string(&mut str_val) {
             Ok(s) => s,
             Err(e) => panic!("Error Reading file: {}", e),
         };
 
-        // 尝试读配置文件，若成功则返回，若失败则返回默认值
         let mut raw_config = match toml::from_str(&str_val) {
             Ok(t) => t,
             Err(_) => {
@@ -60,27 +57,22 @@ impl Config {
 }
 
 impl Config {
-    /// 获取 WWW root
     pub fn www_root(&self) -> &str {
         &self.www_root
     }
 
-    /// 获取监听端口号
     pub fn port(&self) -> u16 {
         self.port
     }
 
-    /// 获取工作线程数量
     pub fn worker_threads(&self) -> usize {
         self.worker_threads
     }
 
-    /// 获取缓存大小
     pub fn cache_size(&self) -> usize {
         self.cache_size
     }
 
-    /// 检查服务器是否工作在内网
     pub fn local(&self) -> bool {
         self.local
     }

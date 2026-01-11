@@ -44,7 +44,7 @@ lazy_static! {
         // 4xx: Client Error
         map.insert(400, "Bad Request");
         map.insert(401, "Unauthorized");
-        map.insert(402, "Payment Required");  // 保留，当前不使用
+        map.insert(402, "Payment Required");
         map.insert(403, "Forbidden");
         map.insert(404, "Not Found");
         map.insert(405, "Method Not Allowed");
@@ -60,7 +60,7 @@ lazy_static! {
         map.insert(415, "Unsupported Media Type");
         map.insert(416, "Range Not Satisfiable");
         map.insert(417, "Expectation Failed");
-        map.insert(418, "I'm a teapot");      // 愚人节玩笑，见RFC2324，该状态码不应被使用
+        map.insert(418, "I'm a teapot");
         map.insert(421, "Misdirected Request");
         map.insert(422, "Unprocessable Content");
         map.insert(426, "Upgrade Required");

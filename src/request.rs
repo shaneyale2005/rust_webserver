@@ -101,32 +101,26 @@ impl Request {
 }
 
 impl Request {
-    /// 返回请求的HTTP协议版本
     pub fn version(&self) -> &HttpVersion {
         &self.version
     }
 
-    /// 返回当前Request的请求路径
     pub fn path(&self) -> &str {
         &self.path
     }
 
-    /// 返回请求的方法
     pub fn method(&self) -> HttpRequestMethod {
         self.method
     }
 
-    /// 返回当前Request的User-Agent
     pub fn user_agent(&self) -> &str {
         &self.user_agent
     }
 
-    /// 返回当前浏览器接受的压缩编码
     pub fn accept_encoding(&self) -> &Vec<HttpEncoding> {
         &self.accept_encoding
     }
 
-    /// 返回 Accept 头
     pub fn accept(&self) -> Option<&String> {
         self.accept.as_ref()
     }

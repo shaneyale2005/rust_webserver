@@ -15,7 +15,6 @@ pub struct FileCache {
 }
 
 impl FileCache {
-    /// 通过指定缓存大小来创建一个新的缓存
     pub fn from_capacity(capacity: usize) -> Self {
         if capacity == 0 {
             panic!("调用from_capacity时指定的大小是0。如果需要自动设置大小，请在调用处进行处理，而不是传入0");
@@ -36,7 +35,6 @@ impl FileCache {
     pub fn find(&mut self, filename: &str, current_modified_time: SystemTime) -> Option<&Bytes> {
         match self.cache.get(filename) {
             Some(entry) => {
-                // 比较修改时间，如果一致则返回缓存内容
                 if entry.modified_time == current_modified_time {
                     Some(&entry.content)
                 } else {
@@ -99,11 +97,9 @@ mod tests {
 
         cache.push("file1.txt", content.clone(), time1);
 
-        // 用不同的修改时间查找，应该返回 None
         let found = cache.find("file1.txt", time2);
         assert!(found.is_none());
 
-        // 用正确的修改时间查找，应该返回内容
         let found = cache.find("file1.txt", time1);
         assert!(found.is_some());
     }
@@ -136,10 +132,8 @@ mod tests {
         cache.push("file1.txt", Bytes::from("old content"), time1);
         cache.push("file1.txt", Bytes::from("new content"), time2);
 
-        // 用旧时间查找应该失败
         assert!(cache.find("file1.txt", time1).is_none());
 
-        // 用新时间查找应该成功
         let found = cache.find("file1.txt", time2);
         assert!(found.is_some());
         assert_eq!(found.unwrap(), &Bytes::from("new content"));
@@ -167,7 +161,6 @@ mod tests {
 
         assert_eq!(cache.len(), 5);
 
-        // 验证所有文件都能找到
         for i in 1..=5 {
             let filename = format!("file{}.txt", i);
             let found = cache.find(&filename, time);

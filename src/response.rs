@@ -64,7 +64,6 @@ impl Response {
         let mut response = Self::new();
         response.allow = None;
 
-        // 根据文件类型决定是否压缩
         let skip_compression = should_skip_compression(mime);
         debug!(
             "[ID{}]文件类型: {}, 跳过压缩: {}",
@@ -94,7 +93,6 @@ impl Response {
             None => debug!("[ID{}]不进行压缩", id),
         };
 
-        // 获取文件的修改时间
         let file_path = Path::new(path);
         let file_modified_time = match metadata(file_path) {
             Ok(meta) => match meta.modified() {
@@ -150,7 +148,6 @@ impl Response {
                     true => None,
                     false => Some(Bytes::from(contents)),
                 };
-                // 设置 Content-Type
                 let content_type_str = mime.to_string();
                 debug!("[ID{}]Content-Type: {}", id, &content_type_str);
                 response.content_type = Some(content_type_str);
@@ -160,15 +157,12 @@ impl Response {
                 if headonly {
                     let path = Path::new(path);
                     let metadata = metadata(path).unwrap();
-                    // HEAD请求也应该返回Content-Type头部
                     let content_type_str = mime.to_string();
                     debug!("[ID{}]Content-Type: {}", id, &content_type_str);
                     response.content_type = Some(content_type_str);
                     response.content = None;
-                    // HEAD请求返回原始文件大小（因为我们不进行实际压缩以提高性能）
                     response.content_length = metadata.len();
                 } else {
-                    // 如果为false，又缓存不命中，就只好读取文件
                     debug!("[ID{}]读取文件: {}", id, path);
                     let mut file = match File::open(path) {
                         Ok(f) => f,
@@ -194,7 +188,6 @@ impl Response {
                         Ok(c) => c,
                         Err(e) => {
                             error!("[ID{}]压缩文件{}失败: {}，返回未压缩内容", id, path, e);
-                            // 压缩失败时清除编码标记，重新读取文件
                             response.content_encoding = None;
                             let mut file = File::open(path).unwrap();
                             let mut buf = Vec::new();
@@ -211,10 +204,8 @@ impl Response {
                     response.content_type = Some(content_type_str);
 
                     response.content = Some(Bytes::from(contents.clone()));
-                    // 缓存存储未压缩的原始内容，以便不同请求可以使用不同的压缩方式
                     let original_contents = match response.content_encoding {
                         Some(_) => {
-                            // 如果进行了压缩，需要重新读取原始文件存入缓存
                             let mut file = File::open(path).unwrap();
                             let mut buf = Vec::new();
                             file.read_to_end(&mut buf).unwrap();
@@ -232,7 +223,6 @@ impl Response {
     fn from_status_code(code: u16, accept_encoding: Vec<HttpEncoding>, id: u128) -> Self {
         let mut response = Self::new();
         response.content_encoding = decide_encoding(&accept_encoding);
-        // 204响应不包含响应体，因此encoding和type也不需要
         if code == 204 {
             response.content = None;
             response.content_encoding = None;
@@ -318,7 +308,6 @@ impl Response {
             }
         };
 
-        // 查找缓存
         let mut cache_lock = match cache.lock() {
             Ok(lock) => lock,
             Err(poisoned) => {
@@ -336,7 +325,6 @@ impl Response {
         match cache_lock.find(&cache_key, dir_modified_time) {
             Some(bytes) => {
                 debug!("[ID{}]缓存命中，原始大小: {} bytes", id, bytes.len());
-                // 缓存存储的是未厊缩的原始内容，需要根据当前请求的编码方式动态厊缩
                 let mut content_data = bytes.to_vec();
                 let original_size = content_data.len();
 
@@ -363,14 +351,12 @@ impl Response {
                 }
 
                 response.content = match headonly {
-                    // headonly时，填入一个空字符串，否则填入找到的bytes
                     true => None,
                     false => Some(Bytes::from(content_data.clone())),
                 };
                 response.content_length = content_data.len() as u64;
             }
             None => {
-                // 缓存未命中或目录已修改，生成目录列表
                 debug!("[ID{}]缓存未命中或目录已修改", id);
                 let mut dir_vec = Vec::<PathBuf>::new();
                 let entries = fs::read_dir(path).unwrap();
@@ -379,7 +365,6 @@ impl Response {
                 }
 
                 let content_bytes = if is_json {
-                    // 生成JSON
                     let json_struct: Vec<_> = dir_vec
                         .iter()
                         .map(|p| {
@@ -408,7 +393,6 @@ impl Response {
                     content.into_bytes()
                 };
 
-                // 压缩
                 debug!(
                     "[ID{}]开始压缩目录内容，原始大小: {} bytes",
                     id,
@@ -424,16 +408,14 @@ impl Response {
                         }
                     };
                 response.content_length = content_compressed.len() as u64;
-                // headonly时，填入一个空字符串，否则填入压缩好的content
                 response.content = match headonly {
                     true => None,
                     false => Some(Bytes::from(content_compressed.clone())),
                 };
 
-                // 写入缓存 - 存储未压缩的原始内容
                 cache_lock.push(
                     &cache_key,
-                    Bytes::from(content_bytes), // 存储原始内容，不是压缩后的
+                    Bytes::from(content_bytes),
                     dir_modified_time,
                 );
             }
@@ -477,19 +459,16 @@ impl Response {
         response
     }
 
-    /// 设定时间为当前时刻
     fn set_date(&mut self) -> &mut Self {
         self.date = Utc::now();
         self
     }
 
-    /// 设置响应协议版本，当前固定为HTTP1.1
     fn set_version(&mut self) -> &mut Self {
         self.version = HttpVersion::V1_1;
         self
     }
 
-    /// 设置服务器名
     fn set_server_name(&mut self) -> &mut Self {
         self.server_name = SERVER_NAME.to_string();
         self
@@ -507,7 +486,6 @@ impl Response {
         self
     }
 
-    /// 预设的404 Response
     pub fn response_404(request: &Request, id: u128) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         Self::from_status_code(404, accept_encoding, id)
@@ -517,7 +495,6 @@ impl Response {
             .to_owned()
     }
 
-    /// 预设的500 Response
     pub fn response_500(request: &Request, id: u128) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         Self::from_status_code(500, accept_encoding, id)
@@ -527,7 +504,6 @@ impl Response {
             .to_owned()
     }
 
-    /// 预设的400 Response
     pub fn response_400(request: &Request, id: u128) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         Self::from_status_code(400, accept_encoding, id)
@@ -547,7 +523,6 @@ impl Response {
         let method = request.method();
         let metadata_result = fs::metadata(path);
 
-        // 仅有下列方法得到支持，其他方法一律返回405
         if method != HttpRequestMethod::Get
             && method != HttpRequestMethod::Head
             && method != HttpRequestMethod::Options
@@ -568,7 +543,6 @@ impl Response {
                 .to_owned();
         }
 
-        // 若请求方法为HEAD，则设置headonly为true
         let headonly = match method {
             HttpRequestMethod::Head => {
                 debug!("[ID{}]请求方法为HEAD", id);
@@ -580,7 +554,6 @@ impl Response {
         match metadata_result {
             Ok(metadata) => {
                 if metadata.is_dir() {
-                    // path是目录
                     debug!("[ID{}]请求的路径是目录", id);
                     let is_json = request
                         .accept()
@@ -592,7 +565,6 @@ impl Response {
                         .set_server_name()
                         .to_owned()
                 } else {
-                    // path是文件
                     debug!("[ID{}]请求的路径是文件", id);
                     let extention = match Path::new(path).extension() {
                         Some(e) => e,
@@ -602,7 +574,6 @@ impl Response {
                         }
                     };
                     debug!("[ID{}]文件扩展名: {}", id, extention.to_str().unwrap());
-                    // 特殊情况：文件扩展名是PHP
                     if extention == "php" {
                         debug!("[ID{}]请求的文件是PHP，启用PHP处理", id);
                         let html = match handle_php(path, id) {
@@ -637,12 +608,9 @@ impl Response {
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
-        // HEAD 请求可以有 content_type 但没有 content
-        // 只有在没有 content 且没有 content_type 时，content_encoding 才应该为 None
         if self.content == None && self.content_type == None {
             assert_eq!(self.content_encoding, None);
         }
-        // 获取各字段的&str
         let version: &str = match self.version {
             HttpVersion::V1_1 => "HTTP/1.1",
         };
@@ -652,7 +620,6 @@ impl Response {
         let date: &str = &format_date(&self.date);
         let server: &str = &self.server_name;
 
-        // 拼接响应
         let header = [
             version,
             " ",
@@ -660,13 +627,11 @@ impl Response {
             " ",
             information,
             CRLF,
-            // 选择性地填入content_type
             match &self.content_type {
                 Some(t) => ["Content-Type: ", &t, CRLF].concat(),
                 None => "".to_string(),
             }
             .as_str(),
-            // 选择性地填入content_encoding
             match self.content_encoding {
                 Some(e) => [
                     "Content-encoding: ",
@@ -691,13 +656,11 @@ impl Response {
             "Server: ",
             server,
             CRLF,
-            // 选择性地填入allow
             match &self.allow {
                 Some(a) => {
                     let mut allow_str = String::new();
                     for (index, method) in a.iter().enumerate() {
                         allow_str.push_str(&format!("{}", method));
-                        // 如果后面还有，就加一个逗号分隔
                         if index < a.len() - 1 {
                             allow_str.push_str(", ");
                         }
@@ -707,12 +670,11 @@ impl Response {
                 None => "".to_string(),
             }
             .as_str(),
-            CRLF, // 分隔响应头和响应体的空行
+            CRLF,
         ]
         .concat();
         [
             header.as_bytes(),
-            // 选择性地填入响应体
             match &self.content {
                 Some(c) => &c,
                 None => b"",
@@ -756,7 +718,6 @@ fn compress(data: Vec<u8>, mode: Option<HttpEncoding>) -> io::Result<Vec<u8>> {
             Ok(output)
         }
         None => {
-            // 无压缩方式，直接返回原文
             Ok(data)
         }
     };
@@ -837,7 +798,6 @@ mod tests {
         let date = Utc::now();
         let formatted = format_date(&date);
 
-        // RFC2822 格式应该包含这些元素
         assert!(formatted.contains("+0000") || formatted.contains("GMT"));
     }
 
@@ -853,9 +813,7 @@ mod tests {
         let data = b"Hello, World! This is a test string for compression.".to_vec();
         let result = compress(data.clone(), Some(HttpEncoding::Gzip)).unwrap();
 
-        // 压缩后的数据应该不同且通常更小（对于较长的数据）
         assert_ne!(result, data);
-        // Gzip 压缩的数据应该以特定的魔数开头
         assert_eq!(&result[0..2], &[0x1f, 0x8b]);
     }
 
@@ -900,7 +858,6 @@ mod tests {
 
     #[test]
     fn test_decide_encoding_br_ignored() {
-        // Br 存在但应该被忽略，优先 gzip
         let encodings = vec![HttpEncoding::Br, HttpEncoding::Gzip];
         let result = decide_encoding(&encodings);
         assert_eq!(result, Some(HttpEncoding::Gzip));
@@ -969,11 +926,10 @@ mod tests {
         let bytes = response.as_bytes();
         let response_str = String::from_utf8_lossy(&bytes);
 
-        // 验证响应格式
         assert!(response_str.starts_with("HTTP/1.1 200 OK"));
         assert!(response_str.contains("Content-Length: 0"));
         assert!(response_str.contains("Server: eslzzyl-webserver"));
-        assert!(response_str.contains("\r\n\r\n")); // 响应头结束
+        assert!(response_str.contains("\r\n\r\n"));
     }
 
     #[test]
@@ -1050,18 +1006,16 @@ mod tests {
         assert_eq!(result, data);
 
         let result_gzip = compress(data, Some(HttpEncoding::Gzip)).unwrap();
-        assert!(!result_gzip.is_empty()); // Gzip header even for empty data
+        assert!(!result_gzip.is_empty());
     }
 
     #[test]
     fn test_compress_large_data() {
-        // 测试较大数据的压缩
         let data = vec![b'A'; 10000];
         let result_gzip = compress(data.clone(), Some(HttpEncoding::Gzip)).unwrap();
         let result_deflate = compress(data.clone(), Some(HttpEncoding::Deflate)).unwrap();
         let result_br = compress(data.clone(), Some(HttpEncoding::Br)).unwrap();
 
-        // 重复数据压缩后应该明显变小
         assert!(result_gzip.len() < data.len());
         assert!(result_deflate.len() < data.len());
         assert!(result_br.len() < data.len());
@@ -1073,7 +1027,6 @@ mod tests {
         let bytes = response.as_bytes();
         let response_str = String::from_utf8_lossy(&bytes);
 
-        // 验证日期格式存在
         assert!(response_str.contains("Date: "));
     }
 
@@ -1088,17 +1041,14 @@ mod tests {
 
         let cache = Arc::new(Mutex::new(FileCache::from_capacity(10)));
 
-        // 测试 HEAD 请求
         let response = Response::from("static/index.html", &request, 1, &cache);
         let bytes = response.as_bytes();
 
-        // HEAD 响应应该包含状态行和头部，但不包含响应体
         let response_str = String::from_utf8_lossy(&bytes);
         assert!(response_str.starts_with("HTTP/1.1 200 OK"));
         assert!(response_str.contains("Content-Length:"));
         assert!(response_str.contains("Server: eslzzyl-webserver"));
 
-        // HEAD 响应的内容部分应该为空
         assert!(!response_str.contains("<!DOCTYPE html>"));
     }
 }
