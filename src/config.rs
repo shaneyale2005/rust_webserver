@@ -14,6 +14,24 @@ pub struct Config {
     worker_threads: usize,
     cache_size: usize,
     local: bool,
+    #[serde(default = "default_streaming_threshold")]
+    streaming_threshold: u64,
+    #[serde(default = "default_chunk_size")]
+    chunk_size: usize,
+    #[serde(default = "default_enable_range_requests")]
+    enable_range_requests: bool,
+}
+
+fn default_streaming_threshold() -> u64 {
+    10485760 // 10MB
+}
+
+fn default_chunk_size() -> usize {
+    262144 // 256KB
+}
+
+fn default_enable_range_requests() -> bool {
+    true
 }
 
 impl Config {
@@ -24,6 +42,9 @@ impl Config {
             worker_threads: 0,
             cache_size: 5,
             local: true,
+            streaming_threshold: default_streaming_threshold(),
+            chunk_size: default_chunk_size(),
+            enable_range_requests: default_enable_range_requests(),
         }
     }
 
@@ -75,5 +96,17 @@ impl Config {
 
     pub fn local(&self) -> bool {
         self.local
+    }
+
+    pub fn streaming_threshold(&self) -> u64 {
+        self.streaming_threshold
+    }
+
+    pub fn chunk_size(&self) -> usize {
+        self.chunk_size
+    }
+
+    pub fn enable_range_requests(&self) -> bool {
+        self.enable_range_requests
     }
 }
