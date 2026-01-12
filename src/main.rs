@@ -17,7 +17,8 @@ use log::{debug, error, info, warn};
 use log4rs;
 use regex::Regex;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    fs::File as TokioFile,
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
     runtime::Builder,
 };
@@ -49,6 +50,7 @@ async fn main() {
 
     let cache_size = config.cache_size();
     let cache = Arc::new(Mutex::new(FileCache::from_capacity(cache_size)));
+    let config_arc = Arc::new(config.clone());
 
     let php_result = Command::new("php").arg("-v").output();
     match php_result {
@@ -153,13 +155,14 @@ async fn main() {
         let active_connection_arc = Arc::clone(&active_connection);
         let root_clone = root.clone();
         let cache_arc = Arc::clone(&cache);
+        let config_arc_clone = Arc::clone(&config_arc);
         debug!("[ID{}]TCP连接已建立", id);
         tokio::spawn(async move {
             {
                 let mut lock = active_connection_arc.lock().unwrap();
                 *lock += 1;
             }
-            handle_connection(&mut stream, id, &root_clone, cache_arc).await;
+            handle_connection(&mut stream, id, &root_clone, cache_arc, config_arc_clone).await;
             {
                 let mut lock = active_connection_arc.lock().unwrap();
                 *lock -= 1;
@@ -174,6 +177,7 @@ async fn handle_connection(
     id: u128,
     root: &str,
     cache: Arc<Mutex<FileCache>>,
+    config: Arc<Config>,
 ) {
     let mut buffer = vec![0; 1024];
 
@@ -220,7 +224,7 @@ async fn handle_connection(
                     return;
                 }
             };
-            Response::from(path_str, &request, id, &cache)
+            Response::from(path_str, &request, id, &cache, &config)
         }
         Err(Exception::FileNotFound) => {
             warn!(
@@ -264,12 +268,78 @@ async fn handle_connection(
         request.user_agent(),
     );
 
-    let response_bytes = response.as_bytes();
-    debug!("[ID{}]响应字节长度: {}", id, response_bytes.len());
-    let write_result = stream.write(&response_bytes).await;
-    debug!("[ID{}]write result: {:?}", id, write_result);
-    let flush_result = stream.flush().await;
-    debug!("[ID{}]flush result: {:?}", id, flush_result);
+    // 检查是否需要流式传输
+    if response.is_streaming() {
+        debug!("[ID{}]使用流式传输模式发送大文件", id);
+        
+        // 先发送响应头
+        let response_bytes = response.as_bytes();
+        if let Err(e) = stream.write_all(&response_bytes).await {
+            error!("[ID{}]发送响应头失败: {}", id, e);
+            return;
+        }
+        
+        // 获取文件路径并流式传输内容
+        let result = route(&request.path(), id, root, false).await;
+        if let Ok(path) = result {
+            if let Some(path_str) = path.to_str() {
+                match TokioFile::open(path_str).await {
+                    Ok(mut file) => {
+                        let chunk_size = config.chunk_size();
+                        let mut buffer = vec![0u8; chunk_size];
+                        let mut total_sent = 0u64;
+                        let content_length = response.get_content_length();
+                        
+                        debug!("[ID{}]开始流式传输，文件大小: {} bytes，块大小: {} bytes", 
+                               id, content_length, chunk_size);
+                        
+                        loop {
+                            match file.read(&mut buffer).await {
+                                Ok(0) => {
+                                    debug!("[ID{}]文件读取完成，总共发送: {} bytes", id, total_sent);
+                                    break;
+                                }
+                                Ok(n) => {
+                                    if let Err(e) = stream.write_all(&buffer[..n]).await {
+                                        error!("[ID{}]流式传输写入失败: {}", id, e);
+                                        return;
+                                    }
+                                    total_sent += n as u64;
+                                    if total_sent % (chunk_size as u64 * 10) == 0 {
+                                        debug!("[ID{}]已发送: {} / {} bytes ({:.1}%)", 
+                                               id, total_sent, content_length, 
+                                               (total_sent as f64 / content_length as f64) * 100.0);
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("[ID{}]读取文件失败: {}", id, e);
+                                    return;
+                                }
+                            }
+                        }
+                        
+                        if let Err(e) = stream.flush().await {
+                            error!("[ID{}]flush失败: {}", id, e);
+                            return;
+                        }
+                        debug!("[ID{}]流式传输完成", id);
+                    }
+                    Err(e) => {
+                        error!("[ID{}]打开文件{}进行流式传输失败: {}", id, path_str, e);
+                        return;
+                    }
+                }
+            }
+        }
+    } else {
+        // 普通响应：一次性发送
+        let response_bytes = response.as_bytes();
+        debug!("[ID{}]响应字节长度: {}", id, response_bytes.len());
+        let write_result = stream.write(&response_bytes).await;
+        debug!("[ID{}]write result: {:?}", id, write_result);
+        let flush_result = stream.flush().await;
+        debug!("[ID{}]flush result: {:?}", id, flush_result);
+    }
 }
 
 async fn route(path: &str, id: u128, root: &str, is_json: bool) -> Result<PathBuf, Exception> {
