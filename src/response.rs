@@ -71,7 +71,6 @@ impl Response {
         let mut response = Self::new();
         response.allow = None;
 
-        // 获取文件大小
         let file_path = Path::new(path);
         let file_metadata = match metadata(file_path) {
             Ok(meta) => meta,
@@ -89,15 +88,12 @@ impl Response {
             }
         };
 
-        // 如果启用了 Range 请求支持，设置 Accept-Ranges 头
         if config.enable_range_requests() {
             response.accept_ranges = Some("bytes".to_string());
         }
 
-        // 检查是否有 Range 请求
         let range_request = request.range();
         
-        // 判断是否需要使用流式传输
         let use_streaming = file_size > config.streaming_threshold() || range_request.is_some();
         
         debug!(
@@ -113,14 +109,12 @@ impl Response {
             }
         };
         
-        // 处理 Range 请求
         if let Some((start, end)) = range_request {
             let end = end.unwrap_or(file_size - 1);
             
-            // 验证 range 范围
             if start >= file_size || end >= file_size || start > end {
                 error!("[ID{}]无效的Range请求: start={}, end={}, file_size={}", id, start, end, file_size);
-                response.set_code(416); // Range Not Satisfiable
+                response.set_code(416);
                 response.content_range = Some(format!("bytes */{}", file_size));
                 response.content_length = 0;
                 return response;
@@ -130,13 +124,12 @@ impl Response {
             debug!("[ID{}]处理Range请求: bytes {}-{}/{} ({}字节)", 
                    id, start, end, file_size, content_length);
             
-            response.set_code(206); // Partial Content
+            response.set_code(206);
             response.content_range = Some(format!("bytes {}-{}/{}", start, end, file_size));
             response.content_type = Some(mime.to_string());
             response.content_length = content_length;
             
             if !headonly {
-                // 读取指定范围的文件内容
                 let mut file = match File::open(path) {
                     Ok(f) => f,
                     Err(e) => {
@@ -166,17 +159,15 @@ impl Response {
             return response;
         }
         
-        // 大文件流式传输
         if use_streaming && !headonly {
             debug!("[ID{}]使用流式传输模式（文件将在write时分块发送）", id);
             response.content_type = Some(mime.to_string());
             response.content_length = file_size;
-            response.content = None; // 流式传输不在这里设置content
+            response.content = None;
 
             return response;
         }
         
-        // 小文件：使用缓存的逻辑
         let skip_compression = should_skip_compression(mime);
         debug!(
             "[ID{}]文件类型: {}, 跳过压缩: {}",
@@ -1043,7 +1034,7 @@ mod tests {
 
         assert!(response_str.starts_with("HTTP/1.1 200 OK"));
         assert!(response_str.contains("Content-Length: 0"));
-        assert!(response_str.contains("Server: eslzzyl-webserver"));
+        assert!(response_str.contains("Server: shaneyale-webserver"));
         assert!(response_str.contains("\r\n\r\n"));
     }
 
@@ -1164,7 +1155,7 @@ mod tests {
         let response_str = String::from_utf8_lossy(&bytes);
         assert!(response_str.starts_with("HTTP/1.1 200 OK"));
         assert!(response_str.contains("Content-Length:"));
-        assert!(response_str.contains("Server: eslzzyl-webserver"));
+        assert!(response_str.contains("Server: shaneyale-webserver"));
 
         assert!(!response_str.contains("<!DOCTYPE html>"));
     }
