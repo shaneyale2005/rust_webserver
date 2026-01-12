@@ -10,6 +10,7 @@ pub struct Request {
     user_agent: String,
     accept_encoding: Vec<HttpEncoding>,
     accept: Option<String>,
+    range: Option<(u64, Option<u64>)>, // (start, end) - end为None表示到文件末尾
 }
 
 impl Request {
@@ -61,6 +62,7 @@ impl Request {
         let mut user_agent = "".to_string();
         let mut accept_encoding = vec![];
         let mut accept = None;
+        let mut range = None;
         for line in &request_lines {
             if line.to_lowercase().starts_with("user-agent") {
                 if let Some(val) = line.split(": ").nth(1) {
@@ -69,6 +71,24 @@ impl Request {
             } else if line.to_lowercase().starts_with("accept:") {
                 if let Some(val) = line.split(": ").nth(1) {
                     accept = Some(val.to_string());
+                }
+            } else if line.to_lowercase().starts_with("range:") {
+                if let Some(val) = line.split(": ").nth(1) {
+                    // 解析 Range: bytes=start-end 格式
+                    if let Some(bytes_part) = val.strip_prefix("bytes=") {
+                        let parts: Vec<&str> = bytes_part.split('-').collect();
+                        if parts.len() == 2 {
+                            let start = parts[0].parse::<u64>().ok();
+                            let end = if parts[1].is_empty() {
+                                None
+                            } else {
+                                parts[1].parse::<u64>().ok()
+                            };
+                            if let Some(s) = start {
+                                range = Some((s, end));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -96,6 +116,7 @@ impl Request {
             user_agent,
             accept_encoding,
             accept,
+            range,
         })
     }
 }
@@ -123,6 +144,10 @@ impl Request {
 
     pub fn accept(&self) -> Option<&String> {
         self.accept.as_ref()
+    }
+
+    pub fn range(&self) -> Option<(u64, Option<u64>)> {
+        self.range
     }
 }
 
