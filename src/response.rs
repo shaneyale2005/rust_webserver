@@ -294,7 +294,6 @@ impl Response {
                         None => contents,
                     };
                     
-                    // 只有小于流式传输阈值的文件才加入缓存
                     if FileCache::should_cache(file_size, config.streaming_threshold()) {
                         cache_lock.push(path, Bytes::from(original_contents), file_modified_time);
                         debug!("[ID{}]文件已加入缓存", id);
