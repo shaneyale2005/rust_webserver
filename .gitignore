@@ -52,6 +52,7 @@ frontend/.swc/
 static/browser/
 *.profraw
 *.profdata
+static/large.bin
 
 # ==========================================
 # Temporary & Cache Files
