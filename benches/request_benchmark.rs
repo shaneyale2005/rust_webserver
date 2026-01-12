@@ -1,86 +1,14 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum HttpRequestMethod {
-    Get,
-    Head,
-    Options,
-    Post,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum HttpEncoding {
-    Gzip,
-    Deflate,
-    Br,
-}
-
-#[derive(Debug, Clone)]
-struct Request {
-    #[allow(dead_code)]
-    method: HttpRequestMethod,
-    #[allow(dead_code)]
-    path: String,
-    #[allow(dead_code)]
-    user_agent: String,
-    #[allow(dead_code)]
-    accept_encoding: Vec<HttpEncoding>,
-}
-
-impl Request {
-    fn try_from(buffer: &[u8]) -> Result<Self, String> {
-        let request_string = String::from_utf8(buffer.to_vec()).map_err(|_| "Invalid UTF-8")?;
-
-        let request_lines: Vec<&str> = request_string.split("\r\n").collect();
-        let first_line: Vec<&str> = request_lines[0].split(" ").collect();
-
-        let method_str = first_line[0].to_uppercase();
-        let method = match method_str.as_str() {
-            "GET" => HttpRequestMethod::Get,
-            "HEAD" => HttpRequestMethod::Head,
-            "OPTIONS" => HttpRequestMethod::Options,
-            "POST" => HttpRequestMethod::Post,
-            _ => return Err("Unsupported method".to_string()),
-        };
-
-        let path = first_line[1].to_string();
-
-        let mut user_agent = String::new();
-        let mut accept_encoding = Vec::new();
-
-        for line in &request_lines {
-            if line.starts_with("user-agent") || line.starts_with("User-Agent") {
-                user_agent = line.split(": ").collect::<Vec<&str>>()[1].to_string();
-            }
-            if line.starts_with("accept-encoding") || line.starts_with("Accept-Encoding") {
-                let encoding = line.split(": ").collect::<Vec<&str>>()[1];
-                if encoding.contains("gzip") {
-                    accept_encoding.push(HttpEncoding::Gzip);
-                }
-                if encoding.contains("deflate") {
-                    accept_encoding.push(HttpEncoding::Deflate);
-                }
-                if encoding.contains("br") {
-                    accept_encoding.push(HttpEncoding::Br);
-                }
-            }
-        }
-
-        Ok(Self {
-            method,
-            path,
-            user_agent,
-            accept_encoding,
-        })
-    }
-}
+use webserver::request::Request;
 
 fn simple_request_parse_benchmark(c: &mut Criterion) {
     let request = b"GET / HTTP/1.1\r\nHost: localhost:7878\r\nUser-Agent: Test\r\n\r\n";
 
     c.bench_function("simple_request_parse", |b| {
         b.iter(|| {
-            let _ = Request::try_from(black_box(request.as_slice()));
+            let buffer = black_box(request.to_vec());
+            let _ = Request::try_from(&buffer, 0).unwrap();
         });
     });
 }
@@ -98,7 +26,8 @@ fn complex_request_parse_benchmark(c: &mut Criterion) {
 
     c.bench_function("complex_request_parse", |b| {
         b.iter(|| {
-            let _ = Request::try_from(black_box(request.as_slice()));
+            let buffer = black_box(request.to_vec());
+            let _ = Request::try_from(&buffer, 0).unwrap();
         });
     });
 }
@@ -124,7 +53,8 @@ fn request_parse_with_encoding_benchmark(c: &mut Criterion) {
     for (name, request) in requests.iter() {
         group.bench_with_input(BenchmarkId::from_parameter(name), request, |b, request| {
             b.iter(|| {
-                let _ = Request::try_from(black_box(request));
+                let buffer = black_box(request.to_vec());
+                let _ = Request::try_from(&buffer, 0).unwrap();
             });
         });
     }
@@ -160,7 +90,8 @@ fn request_parse_different_methods_benchmark(c: &mut Criterion) {
             request,
             |b, request| {
                 b.iter(|| {
-                    let _ = Request::try_from(black_box(request));
+                    let buffer = black_box(request.to_vec());
+                    let _ = Request::try_from(&buffer, 0).unwrap();
                 });
             },
         );
@@ -182,7 +113,8 @@ fn request_parse_different_path_lengths_benchmark(c: &mut Criterion) {
         let request = format!("GET {} HTTP/1.1\r\nHost: localhost\r\n\r\n", path);
         group.bench_with_input(BenchmarkId::from_parameter(name), &request, |b, request| {
             b.iter(|| {
-                let _ = Request::try_from(black_box(request.as_bytes()));
+                let buffer = black_box(request.as_bytes().to_vec());
+                let _ = Request::try_from(&buffer, 0).unwrap();
             });
         });
     }
@@ -199,7 +131,8 @@ fn request_parse_batch_benchmark(c: &mut Criterion) {
 
             b.iter(|| {
                 for _ in 0..count {
-                    let _ = Request::try_from(black_box(request.as_slice()));
+                    let buffer = black_box(request.to_vec());
+                    let _ = Request::try_from(&buffer, 0).unwrap();
                 }
             });
         });
@@ -220,7 +153,8 @@ fn request_case_insensitive_headers_benchmark(c: &mut Criterion) {
     for (name, request) in requests.iter() {
         group.bench_with_input(BenchmarkId::from_parameter(name), request, |b, request| {
             b.iter(|| {
-                let _ = Request::try_from(black_box(request));
+                let buffer = black_box(request.to_vec());
+                let _ = Request::try_from(&buffer, 0).unwrap();
             });
         });
     }
