@@ -10,7 +10,7 @@ pub struct Request {
     user_agent: String,
     accept_encoding: Vec<HttpEncoding>,
     accept: Option<String>,
-    range: Option<(u64, Option<u64>)>, // (start, end) - end为None表示到文件末尾
+    range: Option<(u64, Option<u64>)>,
 }
 
 impl Request {
