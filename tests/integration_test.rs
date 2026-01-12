@@ -196,7 +196,7 @@ mod integration_tests {
 
                 assert!(header_map.contains_key("Server"));
                 if let Some(server) = header_map.get("Server") {
-                    assert!(server.contains("eslzzyl-webserver"));
+                    assert!(server.contains("shaneyale-webserver"));
                 }
             }
             Err(e) => {
