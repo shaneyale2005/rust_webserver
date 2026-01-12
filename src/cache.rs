@@ -32,6 +32,11 @@ impl FileCache {
         };
         self.cache.put(filename.to_string(), entry);
     }
+    
+    // 检查文件大小是否适合缓存（辅助方法）
+    pub fn should_cache(file_size: u64, threshold: u64) -> bool {
+        file_size <= threshold
+    }
     // 查询有效缓存
     pub fn find(&mut self, filename: &str, current_modified_time: SystemTime) -> Option<&Bytes> {
         match self.cache.get(filename) {
