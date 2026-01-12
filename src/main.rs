@@ -72,19 +72,15 @@ async fn main() {
         }
     };
 
-    // 监听端口
     let port: u16 = config.port();
     info!("服务端将在{}端口上监听Socket连接", port);
-    // 地址，本地调试用127.0.0.1
     let address = match config.local() {
         true => Ipv4Addr::new(127, 0, 0, 1),
         false => Ipv4Addr::new(0, 0, 0, 0),
     };
     info!("服务端将在{}地址上监听Socket连接", address);
-    // 拼接socket
     let socket = SocketAddrV4::new(address, port);
 
-    // 执行bind
     let listener = match TcpListener::bind(socket).await {
         Ok(listener) => listener,
         Err(e) => {
@@ -94,12 +90,9 @@ async fn main() {
     };
     info!("端口{}绑定完成", port);
 
-    // 停机命令标志
     let shutdown_flag = Arc::new(Mutex::new(false));
-    // 活跃连接计数
     let active_connection = Arc::new(Mutex::new(0u32));
 
-    // 启动异步命令处理任务
     runtime.spawn({
         let shutdown_flag = Arc::clone(&shutdown_flag);
         let active_connection = Arc::clone(&active_connection);
@@ -109,12 +102,10 @@ async fn main() {
             let mut input = String::new();
             loop {
                 input.clear();
-                // 在这里处理命令，可以调用服务器的相关函数或执行其他操作
                 if let Ok(_) = reader.read_line(&mut input).await {
                     let cmd = input.trim();
                     match cmd {
                         "stop" => {
-                            // 如果收到 "stop" 命令，则设置停机标志
                             let mut flag = shutdown_flag.lock().unwrap();
                             *flag = true;
                             break;
@@ -145,7 +136,6 @@ async fn main() {
     let mut id: u128 = 0;
 
     loop {
-        // 检查停机标志，如果设置了停机标志，退出循环
         if *shutdown_flag.lock().unwrap() {
             break;
         }
@@ -181,7 +171,6 @@ async fn handle_connection(
 ) {
     let mut buffer = vec![0; 1024];
 
-    // 等待tcpstream变得可读
     stream.readable().await.unwrap();
 
     match stream.try_read(&mut buffer) {
@@ -194,7 +183,6 @@ async fn handle_connection(
     }
     debug!("[ID{}]HTTP请求接收完毕", id);
 
-    // 启动timer
     let start_time = Instant::now();
 
     let request = match Request::try_from(&buffer, id) {
@@ -268,18 +256,15 @@ async fn handle_connection(
         request.user_agent(),
     );
 
-    // 检查是否需要流式传输
     if response.is_streaming() {
         debug!("[ID{}]使用流式传输模式发送大文件", id);
         
-        // 先发送响应头
         let response_bytes = response.as_bytes();
         if let Err(e) = stream.write_all(&response_bytes).await {
             error!("[ID{}]发送响应头失败: {}", id, e);
             return;
         }
         
-        // 获取文件路径并流式传输内容
         let result = route(&request.path(), id, root, false).await;
         if let Ok(path) = result {
             if let Some(path_str) = path.to_str() {
@@ -332,7 +317,6 @@ async fn handle_connection(
             }
         }
     } else {
-        // 普通响应：一次性发送
         let response_bytes = response.as_bytes();
         debug!("[ID{}]响应字节长度: {}", id, response_bytes.len());
         let write_result = stream.write(&response_bytes).await;
@@ -346,45 +330,37 @@ async fn route(path: &str, id: u128, root: &str, is_json: bool) -> Result<PathBu
     debug!("[ID{}]route: path='{}', is_json={}", id, path, is_json);
     if path == "/" {
         debug!("[ID{}]请求路径为根目录", id);
-        // 如果是JSON请求（Vue文件管理器），返回根目录以生成文件列表
         if is_json {
             debug!("[ID{}]JSON请求，返回根目录生成文件列表", id);
             let root_path = PathBuf::from(root);
             return Ok(root_path);
         }
-        // 否则检查 index.html 是否存在
         let index_path = PathBuf::from(HTML_INDEX);
         if index_path.exists() {
             debug!("[ID{}]index.html存在，返回index", id);
             return Ok(index_path);
         } else {
-            // index.html 不存在，返回根目录以生成文件列表
             debug!("[ID{}]index.html不存在，返回根目录", id);
             let root_path = PathBuf::from(root);
             return Ok(root_path);
         }
     } else if path == "/browser/" || path == "/browser" {
-        // Vue文件管理器
         if is_json {
-            // 如果是JSON请求，返回browser目录的内容列表
             debug!("[ID{}]JSON请求browser目录，返回目录列表", id);
             let browser_path = PathBuf::from("static/browser");
             if browser_path.exists() && browser_path.is_dir() {
                 return Ok(browser_path);
             }
         }
-        // 如果不是JSON请求，总是返回index.html
         debug!("[ID{}]请求Vue文件管理器HTML页面", id);
         let browser_index = PathBuf::from("static/browser/index.html");
         if browser_index.exists() {
             return Ok(browser_index);
         } else {
-            // 如果index.html不存在，返回404
             error!("[ID{}]Vue文件管理器的index.html不存在", id);
             return Err(Exception::FileNotFound);
         }
     } else if path == "*" {
-        // 常见于OPTIONS方法
         debug!("[ID{}]请求路径为*", id);
         let path = PathBuf::from("*");
         return Ok(path);
