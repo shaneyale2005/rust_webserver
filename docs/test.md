@@ -40,10 +40,10 @@ cargo test
 ```
 
 这会运行所有模块中的单元测试，包括：
-- 缓存功能测试 (`cache::tests`)
-- 请求解析测试 (`request::tests`)
-- 响应生成测试 (`response::tests`)
-- 工具函数测试 (`util::tests`)
+- 缓存功能测试（创建、推送、查找、时间失效、LRU驱逐、更新）
+- 请求解析测试（GET/HEAD/OPTIONS/POST请求，编码头处理，路径解析）
+- 响应生成测试（压缩、编码决策、MIME类型获取）
+- 工具函数测试（文件大小格式化、HTML构建）
 
 ### 集成测试
 
@@ -67,13 +67,13 @@ cargo test --test integration_test -- --include-ignored
 
 #### 集成测试包括：
 
-- `test_get_request_basic` - 基本GET请求
-- `test_head_request` - HEAD请求（无响应体）
-- `test_options_request` - OPTIONS请求
-- `test_404_not_found` - 404错误处理
-- `test_compression_support` - 压缩支持
-- `test_server_header` - Server响应头
-- `test_concurrent_requests` - 并发请求
+- 基本GET请求
+- HEAD请求（无响应体）
+- OPTIONS请求
+- 404错误处理
+- 压缩支持
+- Server响应头
+- 并发请求
 
 ### 浏览器API测试
 
