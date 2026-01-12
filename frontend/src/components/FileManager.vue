@@ -6,6 +6,7 @@ import Toolbar from './Toolbar.vue'
 import FileList from './FileList.vue'
 import FileGrid from './FileGrid.vue'
 import PreviewModal from './PreviewModal.vue'
+import DownloadProgress from './DownloadProgress.vue'
 import { ArrowLeftIcon, HomeIcon } from '../assets/icons'
 
 const store = useFileStore()
@@ -104,6 +105,7 @@ onUnmounted(() => {
     </footer>
 
     <PreviewModal />
+    <DownloadProgress />
   </div>
 </template>
 

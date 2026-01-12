@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchFiles, fetchFileContent } from '../api/file'
+import { fetchFiles, fetchFileContent, downloadFileWithProgress } from '../api/file'
 
 export const useFileStore = defineStore('file', () => {
   const files = ref([])
@@ -13,6 +13,7 @@ export const useFileStore = defineStore('file', () => {
   const previewContent = ref(null)
   const previewFile = ref(null)
   const keyboardIndex = ref(-1)
+  const downloadProgress = ref(new Map()) // 记录每个文件的下载进度
 
   const filteredFiles = computed(() => {
     if (!searchQuery.value.trim()) {
@@ -134,14 +135,47 @@ export const useFileStore = defineStore('file', () => {
     previewContent.value = null
   }
 
-  function downloadFile(file) {
+  async function downloadFile(file) {
     const filePath = currentPath.value === '/'
       ? `/${file.name}`
       : `${currentPath.value}/${file.name}`
-    const link = document.createElement('a')
-    link.href = filePath
-    link.download = file.name
-    link.click()
+    
+    // 检查文件大小，大文件使用带进度的下载
+    if (file.size > 1024 * 1024) { // 大于 1MB
+      try {
+        // 初始化进度
+        downloadProgress.value.set(file.name, {
+          received: 0,
+          total: file.size,
+          percentage: 0
+        })
+        
+        await downloadFileWithProgress(
+          filePath,
+          file.name,
+          (received, total, percentage) => {
+            downloadProgress.value.set(file.name, {
+              received,
+              total,
+              percentage: Math.round(percentage)
+            })
+          }
+        )
+        
+        // 下载完成，移除进度
+        downloadProgress.value.delete(file.name)
+      } catch (err) {
+        console.error('Download failed:', err)
+        downloadProgress.value.delete(file.name)
+        error.value = `下载失败: ${err.message}`
+      }
+    } else {
+      // 小文件直接下载
+      const link = document.createElement('a')
+      link.href = filePath
+      link.download = file.name
+      link.click()
+    }
   }
 
   async function downloadSelected() {
@@ -177,6 +211,7 @@ export const useFileStore = defineStore('file', () => {
     previewContent,
     previewFile,
     keyboardIndex,
+    downloadProgress,
     filteredFiles,
     sortedFiles,
     selectedCount,
