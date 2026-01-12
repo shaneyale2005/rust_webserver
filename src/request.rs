@@ -74,7 +74,6 @@ impl Request {
                 }
             } else if line.to_lowercase().starts_with("range:") {
                 if let Some(val) = line.split(": ").nth(1) {
-                    // 解析 Range: bytes=start-end 格式
                     if let Some(bytes_part) = val.strip_prefix("bytes=") {
                         let parts: Vec<&str> = bytes_part.split('-').collect();
                         if parts.len() == 2 {
