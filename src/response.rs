@@ -1,5 +1,6 @@
 use crate::{
     cache::FileCache,
+    config::Config,
     param::*,
     request::Request,
     util::{format_file_size, handle_php, HtmlBuilder},
@@ -17,7 +18,7 @@ use log::{debug, error, warn};
 use std::{
     ffi::OsStr,
     fs::{self, metadata, File},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     str,
     sync::{Arc, Mutex},
@@ -35,6 +36,8 @@ pub struct Response {
     server_name: String,
     allow: Option<Vec<HttpRequestMethod>>,
     content: Option<Bytes>,
+    content_range: Option<String>,
+    accept_ranges: Option<String>,
 }
 
 impl Response {
@@ -50,29 +53,136 @@ impl Response {
             server_name: SERVER_NAME.to_string(),
             allow: Some(ALLOWED_METHODS.to_vec()),
             content: None,
+            content_range: None,
+            accept_ranges: None,
         }
     }
 
     fn from_file(
         path: &str,
-        accept_encoding: Vec<HttpEncoding>,
+        request: &Request,
         id: u128,
         cache: &Arc<Mutex<FileCache>>,
         headonly: bool,
         mime: &str,
+        config: &Config,
     ) -> Self {
+        let accept_encoding = request.accept_encoding().to_vec();
         let mut response = Self::new();
         response.allow = None;
 
+        // 获取文件大小
+        let file_path = Path::new(path);
+        let file_metadata = match metadata(file_path) {
+            Ok(meta) => meta,
+            Err(e) => {
+                error!("[ID{}]无法获取文件{}的元数据: {}", id, path, e);
+                panic!();
+            }
+        };
+        let file_size = file_metadata.len();
+        let file_modified_time = match file_metadata.modified() {
+            Ok(time) => time,
+            Err(e) => {
+                error!("[ID{}]无法获取文件{}的修改时间: {}", id, path, e);
+                panic!();
+            }
+        };
+
+        // 如果启用了 Range 请求支持，设置 Accept-Ranges 头
+        if config.enable_range_requests() {
+            response.accept_ranges = Some("bytes".to_string());
+        }
+
+        // 检查是否有 Range 请求
+        let range_request = request.range();
+        
+        // 判断是否需要使用流式传输
+        let use_streaming = file_size > config.streaming_threshold() || range_request.is_some();
+        
+        debug!(
+            "[ID{}]文件大小: {} bytes, 流式阈值: {} bytes, 使用流式传输: {}, Range请求: {:?}",
+            id, file_size, config.streaming_threshold(), use_streaming, range_request
+        );
+
+        let mut cache_lock = match cache.lock() {
+            Ok(lock) => lock,
+            Err(poisoned) => {
+                warn!("[ID{}]缓存锁被污染，恢复并继续", id);
+                poisoned.into_inner()
+            }
+        };
+        
+        // 处理 Range 请求
+        if let Some((start, end)) = range_request {
+            let end = end.unwrap_or(file_size - 1);
+            
+            // 验证 range 范围
+            if start >= file_size || end >= file_size || start > end {
+                error!("[ID{}]无效的Range请求: start={}, end={}, file_size={}", id, start, end, file_size);
+                response.set_code(416); // Range Not Satisfiable
+                response.content_range = Some(format!("bytes */{}", file_size));
+                response.content_length = 0;
+                return response;
+            }
+            
+            let content_length = end - start + 1;
+            debug!("[ID{}]处理Range请求: bytes {}-{}/{} ({}字节)", 
+                   id, start, end, file_size, content_length);
+            
+            response.set_code(206); // Partial Content
+            response.content_range = Some(format!("bytes {}-{}/{}", start, end, file_size));
+            response.content_type = Some(mime.to_string());
+            response.content_length = content_length;
+            
+            if !headonly {
+                // 读取指定范围的文件内容
+                let mut file = match File::open(path) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        error!("[ID{}]无法打开文件{}: {}", id, path, e);
+                        panic!();
+                    }
+                };
+                
+                if let Err(e) = file.seek(SeekFrom::Start(start)) {
+                    error!("[ID{}]无法定位到文件位置{}: {}", id, start, e);
+                    panic!();
+                }
+                
+                let mut buffer = vec![0u8; content_length as usize];
+                match file.read_exact(&mut buffer) {
+                    Ok(_) => {
+                        response.content = Some(Bytes::from(buffer));
+                        debug!("[ID{}]Range内容读取成功", id);
+                    }
+                    Err(e) => {
+                        error!("[ID{}]读取Range内容失败: {}", id, e);
+                        panic!();
+                    }
+                }
+            }
+            
+            return response;
+        }
+        
+        // 大文件流式传输
+        if use_streaming && !headonly {
+            debug!("[ID{}]使用流式传输模式（文件将在write时分块发送）", id);
+            response.content_type = Some(mime.to_string());
+            response.content_length = file_size;
+            response.content = None; // 流式传输不在这里设置content
+
+            return response;
+        }
+        
+        // 小文件：使用缓存的逻辑
         let skip_compression = should_skip_compression(mime);
         debug!(
             "[ID{}]文件类型: {}, 跳过压缩: {}",
             id, mime, skip_compression
         );
-        if skip_compression {
-            debug!("[ID{}]文件类型 {} 已是压缩格式，跳过HTTP压缩", id, mime);
-        }
-
+        
         response.content_encoding = match headonly {
             true => None,
             false => {
@@ -86,35 +196,14 @@ impl Response {
                 }
             }
         };
+        
         match response.content_encoding {
             Some(HttpEncoding::Gzip) => debug!("[ID{}]使用Gzip压缩编码", id),
             Some(HttpEncoding::Br) => debug!("[ID{}]使用Brotli压缩编码", id),
             Some(HttpEncoding::Deflate) => debug!("[ID{}]使用Deflate压缩编码", id),
             None => debug!("[ID{}]不进行压缩", id),
         };
-
-        let file_path = Path::new(path);
-        let file_modified_time = match metadata(file_path) {
-            Ok(meta) => match meta.modified() {
-                Ok(time) => time,
-                Err(e) => {
-                    error!("[ID{}]无法获取文件{}的修改时间: {}", id, path, e);
-                    panic!();
-                }
-            },
-            Err(e) => {
-                error!("[ID{}]无法获取文件{}的元数据: {}", id, path, e);
-                panic!();
-            }
-        };
-
-        let mut cache_lock = match cache.lock() {
-            Ok(lock) => lock,
-            Err(poisoned) => {
-                warn!("[ID{}]缓存锁被污染，恢复并继续", id);
-                poisoned.into_inner()
-            }
-        };
+        
         match cache_lock.find(path, file_modified_time) {
             Some(bytes) => {
                 debug!("[ID{}]缓存命中，原始大小: {} bytes", id, bytes.len());
@@ -213,7 +302,14 @@ impl Response {
                         }
                         None => contents,
                     };
-                    cache_lock.push(path, Bytes::from(original_contents), file_modified_time);
+                    
+                    // 只有小于流式传输阈值的文件才加入缓存
+                    if FileCache::should_cache(file_size, config.streaming_threshold()) {
+                        cache_lock.push(path, Bytes::from(original_contents), file_modified_time);
+                        debug!("[ID{}]文件已加入缓存", id);
+                    } else {
+                        debug!("[ID{}]文件过大({} bytes)，跳过缓存", id, file_size);
+                    }
                 }
             }
         }
@@ -518,6 +614,7 @@ impl Response {
         request: &Request,
         id: u128,
         cache: &Arc<Mutex<FileCache>>,
+        config: &Config,
     ) -> Response {
         let accept_encoding = request.accept_encoding().to_vec();
         let method = request.method();
@@ -592,7 +689,7 @@ impl Response {
                     }
                     let mime = get_mime(extention);
                     debug!("[ID{}]MIME类型: {}", id, mime);
-                    Self::from_file(path, accept_encoding, id, cache, headonly, mime)
+                    Self::from_file(path, request, id, cache, headonly, mime, config)
                         .set_date()
                         .set_code(200)
                         .set_version()
@@ -670,6 +767,16 @@ impl Response {
                 None => "".to_string(),
             }
             .as_str(),
+            match &self.accept_ranges {
+                Some(r) => ["Accept-Ranges: ", r, CRLF].concat(),
+                None => "".to_string(),
+            }
+            .as_str(),
+            match &self.content_range {
+                Some(r) => ["Content-Range: ", r, CRLF].concat(),
+                None => "".to_string(),
+            }
+            .as_str(),
             CRLF,
         ]
         .concat();
@@ -691,6 +798,14 @@ impl Response {
 
     pub fn information(&self) -> &str {
         &self.information
+    }
+    
+    pub fn is_streaming(&self) -> bool {
+        self.content.is_none() && self.content_type.is_some() && self.content_length > 0
+    }
+    
+    pub fn get_content_length(&self) -> u64 {
+        self.content_length
     }
 }
 
@@ -1033,6 +1148,7 @@ mod tests {
     #[test]
     fn test_head_request_response() {
         use crate::cache::FileCache;
+        use crate::config::Config;
         use std::sync::{Arc, Mutex};
 
         let request_str = "HEAD /index.html HTTP/1.1\r\nHost: localhost:7878\r\n\r\n";
@@ -1040,8 +1156,9 @@ mod tests {
         let request = Request::try_from(&buffer, 1).unwrap();
 
         let cache = Arc::new(Mutex::new(FileCache::from_capacity(10)));
+        let config = Config::new();
 
-        let response = Response::from("static/index.html", &request, 1, &cache);
+        let response = Response::from("static/index.html", &request, 1, &cache, &config);
         let bytes = response.as_bytes();
 
         let response_str = String::from_utf8_lossy(&bytes);
