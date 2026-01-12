@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 
 pub const HTML_INDEX: &str = r"static/index.html";
 
-pub const SERVER_NAME: &str = "eslzzyl-webserver";
+pub const SERVER_NAME: &str = "shaneyale-webserver";
 
 pub const CRLF: &str = "\r\n";
 
