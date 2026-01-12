@@ -2,59 +2,7 @@ use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::SystemTime;
 
-use std::collections::HashMap;
-
-#[derive(Clone)]
-struct CacheEntry {
-    content: Bytes,
-    modified_time: SystemTime,
-}
-
-struct FileCache {
-    cache: HashMap<String, CacheEntry>,
-    capacity: usize,
-    size: usize,
-    first: String,
-}
-
-impl FileCache {
-    fn from_capacity(capacity: usize) -> Self {
-        Self {
-            cache: HashMap::new(),
-            capacity,
-            size: 0,
-            first: String::new(),
-        }
-    }
-
-    fn push(&mut self, filename: &str, bytes: Bytes, modified_time: SystemTime) {
-        let filename_str = filename.to_string();
-        if self.size == self.capacity {
-            self.cache.remove(&self.first);
-            self.first = filename_str.clone();
-        } else {
-            self.size += 1;
-        }
-        let entry = CacheEntry {
-            content: bytes,
-            modified_time,
-        };
-        self.cache.insert(filename_str, entry);
-    }
-
-    fn find(&self, filename: &str, current_modified_time: SystemTime) -> Option<&Bytes> {
-        match self.cache.get(filename) {
-            Some(entry) => {
-                if entry.modified_time == current_modified_time {
-                    Some(&entry.content)
-                } else {
-                    None
-                }
-            }
-            None => None,
-        }
-    }
-}
+use webserver::cache::FileCache;
 
 fn cache_push_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("cache_push");
