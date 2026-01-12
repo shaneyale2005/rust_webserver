@@ -1,4 +1,4 @@
-、refresh_rate: 30 seconds
+refresh_rate: 30 seconds
 appenders:
     stdout:
         kind: console
