@@ -33,7 +33,7 @@ impl FileCache {
         self.cache.put(filename.to_string(), entry);
     }
     
-    // 检查文件大小是否适合缓存（辅助方法）
+    // 检查文件大小是否适合缓存
     pub fn should_cache(file_size: u64, threshold: u64) -> bool {
         file_size <= threshold
     }
