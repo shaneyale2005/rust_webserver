@@ -1,14 +1,29 @@
-use std::collections::HashMap;
+// Copyright (c) 2026 shaneyale (shaneyale86@gmail.com)
+// All rights reserved.
 
+//! # Web 服务器协议参数与常量模块
+//!
+//! 该模块定义了 `shaneyale-webserver` 遵循的 HTTP 协议相关常量和数据结构，包括：
+//! - 常见的 HTTP 状态码及其原因短语（Reason Phrase）。
+//! - 详尽的 MIME 类型映射表。
+//! - HTTP 方法、版本及编码格式的强类型枚举。
+
+use std::collections::HashMap;
 use lazy_static::lazy_static;
 
+/// 默认的首页 HTML 文件路径
 pub const HTML_INDEX: &str = r"static/index.html";
 
+/// 服务器名称标识，用于 HTTP 响应头的 `Server` 字段
 pub const SERVER_NAME: &str = "shaneyale-webserver";
 
+/// HTTP 协议规定的换行符（Carriage Return Line Feed）
 pub const CRLF: &str = "\r\n";
 
 lazy_static! {
+    /// 服务器当前允许处理的 HTTP 方法列表。
+    ///
+    /// 用于在收到请求时进行初步过滤，不在该列表中的方法将触发 405 Method Not Allowed。
     pub static ref ALLOWED_METHODS: Vec<HttpRequestMethod> = {
         vec![
             HttpRequestMethod::Get,
@@ -19,11 +34,16 @@ lazy_static! {
 }
 
 lazy_static! {
+    /// HTTP 状态码与其对应的标准原因短语映射表。
+    ///
+    /// 参考标准：[RFC 9110: HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html)。
     pub static ref STATUS_CODES: HashMap<u16, &'static str> = {
         let mut map = HashMap::new();
+        // 1xx: 信息响应 (Informational)
         map.insert(100, "Continue");
         map.insert(101, "Switching Protocols");
-        // 2xx: Successful
+        
+        // 2xx: 成功响应 (Successful)
         map.insert(200, "OK");
         map.insert(201, "Created");
         map.insert(202, "Accepted");
@@ -31,17 +51,19 @@ lazy_static! {
         map.insert(204, "No Content");
         map.insert(205, "Reset Content");
         map.insert(206, "Partial Content");
-        // 3xx: Redirection
+        
+        // 3xx: 重定向 (Redirection)
         map.insert(300, "Multiple Choices");
         map.insert(301, "Moved Permanently");
         map.insert(302, "Found");
         map.insert(303, "See Other");
         map.insert(304, "Not Modified");
         map.insert(305, "Use Proxy");
-        // 306 已弃用
+        // 306 已弃用 (Reserved)
         map.insert(307, "Temporary Redirect");
         map.insert(308, "Permanent Redirect");
-        // 4xx: Client Error
+        
+        // 4xx: 客户端错误 (Client Error)
         map.insert(400, "Bad Request");
         map.insert(401, "Unauthorized");
         map.insert(402, "Payment Required");
@@ -64,7 +86,8 @@ lazy_static! {
         map.insert(421, "Misdirected Request");
         map.insert(422, "Unprocessable Content");
         map.insert(426, "Upgrade Required");
-        // 5xx: Server Error
+        
+        // 5xx: 服务端错误 (Server Error)
         map.insert(500, "Internal Server Error");
         map.insert(501, "Not Implemented");
         map.insert(502, "Bad Gateway");
@@ -76,6 +99,9 @@ lazy_static! {
 }
 
 lazy_static! {
+    /// 文件后缀名到 MIME 类型（Media Type）的映射表。
+    ///
+    /// 用于设置响应头中的 `Content-Type` 字段，确保浏览器能正确解析返回的文件流。
     pub static ref MIME_TYPES: HashMap<&'static str, &'static str> = {
         let mut map = HashMap::new();
         map.insert("aac", "audio/aac");
@@ -174,34 +200,47 @@ lazy_static! {
         map.insert("xul", "application/vnd.mozilla.xul+xml");
         map.insert("zip", "application/zip");
         map.insert("7z", "application/x-7z-compressed");
+        // 兜底类型（通常用于无法识别后缀的二进制流）
         map.insert("_", "application/octet-stream");
         map
     };
 }
 
+/// 支持的 HTTP 协议版本
 #[derive(Debug, Clone, Copy)]
 pub enum HttpVersion {
+    /// HTTP/1.1 版本
     V1_1,
 }
 
+/// 标准 HTTP 请求方法
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HttpRequestMethod {
+    /// 获取资源
     Get,
+    /// 获取资源的元数据（不包含响应体）
     Head,
+    /// 查询服务器支持的选项
     Options,
+    /// 提交数据或执行操作
     Post,
 }
 
+/// 支持的内容编码（压缩）格式
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HttpEncoding {
+    /// GNU zip 压缩
     Gzip,
+    /// zlib 压缩
     Deflate,
+    /// Brotli 压缩
     Br,
 }
 
 use std::fmt;
 
 impl fmt::Display for HttpVersion {
+    /// 将枚举格式化为 HTTP 报文中的版本字符串
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             HttpVersion::V1_1 => write!(f, "1.1"),
@@ -210,6 +249,7 @@ impl fmt::Display for HttpVersion {
 }
 
 impl fmt::Display for HttpRequestMethod {
+    /// 将枚举格式化为 HTTP 标准大写方法名
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             HttpRequestMethod::Get => write!(f, "GET"),
@@ -221,6 +261,7 @@ impl fmt::Display for HttpRequestMethod {
 }
 
 impl fmt::Display for HttpEncoding {
+    /// 将枚举格式化为 `Content-Encoding` 头所使用的标识符
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             HttpEncoding::Gzip => write!(f, "gzip"),
