@@ -1,4 +1,4 @@
-// Copyright (c) 2024 shaneyale (shaneyale86@gmail.com)
+// Copyright (c) 2026 shaneyale (shaneyale86@gmail.com)
 // All rights reserved.
 
 //! # Exception 模块
