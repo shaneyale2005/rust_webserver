@@ -1,18 +1,43 @@
-use std::{path::PathBuf, process::Command};
+// Copyright (c) 2026 shaneyale (shaneyale86@gmail.com)
+// All rights reserved.
 
+//! # HTML 构建与 PHP 处理模块
+//! 
+//! 该模块负责生成 Web 服务器所需的动态 HTML 内容，包括：
+//! 1. 状态码对应的错误页面。
+//! 2. 目录文件的索引列表页面。
+//! 3. 辅助工具函数（文件大小格式化、目录排序）。
+//! 4. 外部 PHP 脚本的解析与执行。
+
+use std::{path::PathBuf, process::Command};
 use chrono::{DateTime, Local};
 use log::error;
-
 use crate::{exception::Exception, param::STATUS_CODES};
 
+/// `HtmlBuilder` 用于构建符合 HTML5 标准的页面字符串。
+/// 
+/// 该结构体采用建造者模式的思想，通过收集标题、样式、脚本和主体内容，
+/// 最终生成完整的 HTML 源码。
 pub struct HtmlBuilder {
+    /// 页面 `<title>` 标签的内容
     title: String,
+    /// 注入 `<style>` 标签的 CSS 样式
     css: String,
+    /// 注入 `<script>` 标签的 JavaScript 脚本
     script: String,
+    /// 注入 `<body>` 标签的 HTML 主体内容
     body: String,
 }
 
 impl HtmlBuilder {
+    /// 根据 HTTP 状态码创建状态页面。
+    /// 
+    /// # 参数
+    /// * `code` - HTTP 状态码（如 200, 404, 500）。
+    /// * `note` - 可选的自定义描述信息。如果为 `None`，则从系统预设的 `STATUS_CODES` 中获取。
+    /// 
+    /// # 异常
+    /// 如果传入了系统未定义且未提供 `note` 的状态码，该函数会触发 `panic`。
     pub fn from_status_code(code: u16, note: Option<&str>) -> Self {
         let title = format!("{}", code);
         let css = r"
@@ -47,6 +72,16 @@ impl HtmlBuilder {
         }
     }
 
+    /// 根据目录路径和文件列表创建目录索引页面。
+    /// 
+    /// # 参数
+    /// * `path` - 当前访问的 URL 路径字符串。
+    /// * `dir_vec` - 包含该目录下所有文件和子目录 `PathBuf` 的向量。
+    /// 
+    /// # 功能描述
+    /// 1. 对文件列表进行排序（文件夹在前，文件在后）。
+    /// 2. 生成包含文件名、大小、修改时间的表格。
+    /// 3. 自动处理路径结尾的斜杠并添加“返回上级目录”的链接。
     pub fn from_dir(path: &str, dir_vec: &mut Vec<PathBuf>) -> Self {
         let mut body = String::new();
         sort_dir_entries(dir_vec);
@@ -135,6 +170,10 @@ impl HtmlBuilder {
         }
     }
 
+    /// 组装所有组件，生成最终的 HTML 5 字符串。
+    /// 
+    /// # 返回
+    /// 返回一个完整的 HTML 文档字符串，包含 DOCTYPE、head、style、script 和 body。
     pub fn build(&self) -> String {
         format!(
             r##"<!DOCTYPE html>
@@ -155,6 +194,17 @@ impl HtmlBuilder {
     }
 }
 
+/// 将以字节为单位的文件大小转换为易读的格式（B, KB, MB, GB, TB）。
+/// 
+/// # 参数
+/// * `size` - 文件大小（字节）。
+/// 
+/// # 示例
+/// ```
+/// use webserver::util::format_file_size;
+/// let human_size = format_file_size(1024);
+/// assert_eq!(human_size, "1.0 KB");
+/// ```
 pub fn format_file_size(size: u64) -> String {
     let units = ["B", "KB", "MB", "GB", "TB"];
     let mut size = size as f64;
@@ -168,6 +218,11 @@ pub fn format_file_size(size: u64) -> String {
     format!("{:.1} {}", size, units[unit_index])
 }
 
+/// 对文件路径向量进行排序。
+/// 
+/// 排序规则：
+/// 1. 优先排列目录（Directory）。
+/// 2. 同类型（同为目录或同为文件）按照路径名称升序排列。
 fn sort_dir_entries(vec: &mut Vec<PathBuf>) {
     vec.sort_by(|a, b| {
         let a_is_dir = a.is_dir();
@@ -183,9 +238,21 @@ fn sort_dir_entries(vec: &mut Vec<PathBuf>) {
     });
 }
 
+/// 调用系统环境中的 PHP 解释器执行指定的 PHP 文件。
+/// 
+/// # 参数
+/// * `path` - PHP 文件的本地绝对路径或相对路径。
+/// * `id` - 当前请求的唯一 ID，用于日志记录。
+/// 
+/// # 返回值
+/// * `Ok(String)` - PHP 脚本标准输出的内容。
+/// * `Err(Exception)` - 如果无法调用 PHP 解释器（`PHPExecuteFailed`）或脚本执行报错（`PHPCodeError`）。
+/// 
+/// # 注意
+/// 运行环境必须在系统 PATH 中安装有 `php` 命令。
 pub fn handle_php(path: &str, id: u128) -> Result<String, Exception> {
     let result = Command::new("php")
-        .arg(path) // PHP文件路径
+        .arg(path)
         .output();
     let output = match result {
         Ok(o) => o,
@@ -207,6 +274,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// 测试文件大小格式化逻辑是否正确处理各数量级转换
     #[test]
     fn test_file_size() {
         let a = 9926;
@@ -246,6 +314,7 @@ mod tests {
         assert_eq!(format_file_size(1099511627776), "1.0 TB");
     }
 
+    /// 测试状态码页面生成是否包含核心 HTML 标签和预期的描述
     #[test]
     fn test_html_builder_from_status_code() {
         let html = HtmlBuilder::from_status_code(404, Some("测试404")).build();
@@ -262,6 +331,7 @@ mod tests {
         assert!(html.contains("OK"));
     }
 
+    /// 验证非法状态码是否会引起 Panic
     #[test]
     #[should_panic(expected = "非法的状态码")]
     fn test_html_builder_invalid_status_code() {
@@ -277,6 +347,7 @@ mod tests {
         }
     }
 
+    /// 测试目录排序功能：文件夹是否排在文件之前
     #[test]
     fn test_sort_dir_entries() {
         let mut entries = vec![PathBuf::from("file1.txt"), PathBuf::from("file2.txt")];
@@ -287,6 +358,7 @@ mod tests {
         assert_eq!(entries[1].file_name().unwrap(), "file2.txt");
     }
 
+    /// 验证生成的页面结构是否符合 HTML5 标准格式
     #[test]
     fn test_html_builder_structure() {
         let html = HtmlBuilder::from_status_code(404, Some("测试")).build();
@@ -305,6 +377,7 @@ mod tests {
         assert!(html.contains("charset=\"utf-8\""));
     }
 
+    /// 边界值测试：测试文件大小在临界点（如 1023B 转换到 1KB）的切换是否正确
     #[test]
     fn test_format_file_size_edge_cases() {
         assert_eq!(format_file_size(1024 - 1), "1023.0 B");
