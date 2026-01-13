@@ -32,7 +32,7 @@ fn cache_push_benchmark(c: &mut Criterion) {
 fn cache_find_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("cache_find");
 
-    for size in [10, 100, 1000].iter() {
+    for size in [10, 100, 1000, 10000].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
 
             let mut cache = FileCache::from_capacity(size);
