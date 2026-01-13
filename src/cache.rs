@@ -47,6 +47,7 @@ impl FileCache {
     /// # Examples
     ///
     /// ```
+    /// use webserver::FileCache;
     /// let cache = FileCache::from_capacity(100);
     /// ```
     pub fn from_capacity(capacity: usize) -> Self {
