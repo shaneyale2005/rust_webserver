@@ -1,3 +1,12 @@
+// Copyright (c) 2026 shaneyale (shaneyale86@gmail.com)
+// All rights reserved.
+
+//! HTTP 响应处理模块
+//!
+//! 本模块负责构建和封装 HTTP 响应（Response）。
+//! 它涵盖了从文件读取、目录列表生成、状态码响应构建、
+//! 内容压缩（Gzip, Deflate, Brotli）、缓存交互以及 HTTP 报文序列化等功能。
+
 use crate::{
     cache::FileCache,
     config::Config,
@@ -24,23 +33,41 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+/// 表示一个 HTTP 响应结构体。
+///
+/// 该结构体封装了发送给客户端的所有必要信息，包括状态行、响应头和响应体。
 #[derive(Debug, Clone)]
 pub struct Response {
+    /// HTTP 版本（如 HTTP/1.1）
     version: HttpVersion,
+    /// HTTP 状态码（如 200, 404）
     status_code: u16,
+    /// 状态码对应的描述信息（如 "OK", "Not Found"）
     information: String,
+    /// Content-Type 响应头
     content_type: Option<String>,
+    /// Content-Length 响应头，表示内容长度
     content_length: u64,
+    /// Date 响应头，表示响应生成时间
     date: DateTime<Utc>,
+    /// Content-Encoding 响应头，表示使用的压缩算法
     content_encoding: Option<HttpEncoding>,
+    /// Server 响应头，表示服务器名称
     server_name: String,
+    /// Allow 响应头，用于 OPTIONS 请求或 405 错误
     allow: Option<Vec<HttpRequestMethod>>,
+    /// 响应体内容（二进制数据）
     content: Option<Bytes>,
+    /// Content-Range 响应头，用于断点续传
     content_range: Option<String>,
+    /// Accept-Ranges 响应头，告知客户端服务器支持范围请求
     accept_ranges: Option<String>,
 }
 
 impl Response {
+    /// 创建一个新的默认 Response 实例。
+    ///
+    /// 默认为 200 OK，HTTP/1.1，无内容。
     pub fn new() -> Self {
         Self {
             version: HttpVersion::V1_1,
@@ -58,6 +85,24 @@ impl Response {
         }
     }
 
+    /// 从文件系统构建响应。
+    ///
+    /// 此方法是处理静态文件请求的核心逻辑，包含以下功能：
+    /// 1. 获取文件元数据。
+    /// 2. 处理 HTTP Range 请求（断点续传/部分内容）。
+    /// 3. 判断是否使用流式传输（大文件）。
+    /// 4. 协商内容压缩（Gzip/Br/Deflate）。
+    /// 5. 与内存缓存（FileCache）交互，处理缓存命中与更新。
+    ///
+    /// # 参数
+    ///
+    /// * `path` - 请求的文件路径。
+    /// * `request` - 原始 HTTP 请求对象。
+    /// * `id` - 请求 ID，用于日志追踪。
+    /// * `cache` - 全局文件缓存。
+    /// * `headonly` - 是否仅处理 HEAD 请求（不返回 body）。
+    /// * `mime` - 文件的 MIME 类型。
+    /// * `config` - 服务器配置。
     fn from_file(
         path: &str,
         request: &Request,
@@ -69,14 +114,17 @@ impl Response {
     ) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         let mut response = Self::new();
+        // 静态文件通常不需要 Allow 头，除非特定策略
         response.allow = None;
 
         let file_path = Path::new(path);
+        
+        // 1. 获取文件元数据
         let file_metadata = match metadata(file_path) {
             Ok(meta) => meta,
             Err(e) => {
                 error!("[ID{}]无法获取文件{}的元数据: {}", id, path, e);
-                panic!();
+                panic!(); // 注意：此处 panic 会导致当前线程崩溃，生产环境建议返回 500 错误
             }
         };
         let file_size = file_metadata.len();
@@ -88,12 +136,16 @@ impl Response {
             }
         };
 
+        // 告知客户端支持 Range 请求
         if config.enable_range_requests() {
             response.accept_ranges = Some("bytes".to_string());
         }
 
         let range_request = request.range();
         
+        // 判断是否触发流式传输逻辑：
+        // 1. 文件大小超过阈值
+        // 2. 或者这是一个 Range 请求
         let use_streaming = file_size > config.streaming_threshold() || range_request.is_some();
         
         debug!(
@@ -101,6 +153,7 @@ impl Response {
             id, file_size, config.streaming_threshold(), use_streaming, range_request
         );
 
+        // 获取缓存锁，如果锁中毒则恢复
         let mut cache_lock = match cache.lock() {
             Ok(lock) => lock,
             Err(poisoned) => {
@@ -109,12 +162,14 @@ impl Response {
             }
         };
         
+        // 2. 处理 Range 请求 (HTTP 206 Partial Content)
         if let Some((start, end)) = range_request {
             let end = end.unwrap_or(file_size - 1);
             
+            // 验证 Range 有效性
             if start >= file_size || end >= file_size || start > end {
                 error!("[ID{}]无效的Range请求: start={}, end={}, file_size={}", id, start, end, file_size);
-                response.set_code(416);
+                response.set_code(416); // Range Not Satisfiable
                 response.content_range = Some(format!("bytes */{}", file_size));
                 response.content_length = 0;
                 return response;
@@ -129,6 +184,7 @@ impl Response {
             response.content_type = Some(mime.to_string());
             response.content_length = content_length;
             
+            // 对于 HEAD 请求，不读取实际内容
             if !headonly {
                 let mut file = match File::open(path) {
                     Ok(f) => f,
@@ -138,6 +194,7 @@ impl Response {
                     }
                 };
                 
+                // 定位并读取指定范围
                 if let Err(e) = file.seek(SeekFrom::Start(start)) {
                     error!("[ID{}]无法定位到文件位置{}: {}", id, start, e);
                     panic!();
@@ -159,15 +216,19 @@ impl Response {
             return response;
         }
         
+        // 3. 处理流式传输模式（非 Range 的大文件）
+        // 如果启用流式传输且不是 HEAD 请求，则不在此处加载内容到内存
+        // 内容将在 HTTP 响应写入阶段分块发送
         if use_streaming && !headonly {
             debug!("[ID{}]使用流式传输模式（文件将在write时分块发送）", id);
             response.content_type = Some(mime.to_string());
             response.content_length = file_size;
-            response.content = None;
+            response.content = None; // content 为 None 触发流式发送逻辑
 
             return response;
         }
         
+        // 4. 压缩协商
         let skip_compression = should_skip_compression(mime);
         debug!(
             "[ID{}]文件类型: {}, 跳过压缩: {}",
@@ -195,12 +256,17 @@ impl Response {
             None => debug!("[ID{}]不进行压缩", id),
         };
         
+        // 5. 缓存查找与处理
         match cache_lock.find(path, file_modified_time) {
             Some(bytes) => {
+                // --- 缓存命中 ---
                 debug!("[ID{}]缓存命中，原始大小: {} bytes", id, bytes.len());
                 let mut contents = bytes.to_vec();
                 let original_size = contents.len();
 
+                // 如果需要压缩，对缓存的内容进行压缩
+                // 注意：这里目前的实现是对缓存的原始数据进行实时压缩，
+                // 也可以优化为缓存已压缩的数据。
                 if response.content_encoding.is_some() {
                     debug!(
                         "[ID{}]对缓存内容进行压缩，编码方式: {:?}",
@@ -233,6 +299,7 @@ impl Response {
                 response.content_type = Some(content_type_str);
             }
             None => {
+                // --- 缓存未命中 ---
                 debug!("[ID{}]缓存未命中或文件已修改", id);
                 if headonly {
                     let path = Path::new(path);
@@ -260,6 +327,8 @@ impl Response {
                         }
                     }
                     let original_size = contents.len();
+                    
+                    // 压缩文件内容
                     debug!(
                         "[ID{}]开始压缩文件，原始大小: {} bytes, 编码方式: {:?}",
                         id, original_size, response.content_encoding
@@ -269,6 +338,7 @@ impl Response {
                         Err(e) => {
                             error!("[ID{}]压缩文件{}失败: {}，返回未压缩内容", id, path, e);
                             response.content_encoding = None;
+                            // 压缩失败回退到读取原始文件（虽然上面 contents 已被所有权转移，这里重新读）
                             let mut file = File::open(path).unwrap();
                             let mut buf = Vec::new();
                             file.read_to_end(&mut buf).unwrap();
@@ -284,6 +354,8 @@ impl Response {
                     response.content_type = Some(content_type_str);
 
                     response.content = Some(Bytes::from(contents.clone()));
+                    
+                    // 为了存入缓存，需要原始的未压缩数据
                     let original_contents = match response.content_encoding {
                         Some(_) => {
                             let mut file = File::open(path).unwrap();
@@ -294,6 +366,7 @@ impl Response {
                         None => contents,
                     };
                     
+                    // 判断文件大小是否适合放入缓存
                     if FileCache::should_cache(file_size, config.streaming_threshold()) {
                         cache_lock.push(path, Bytes::from(original_contents), file_modified_time);
                         debug!("[ID{}]文件已加入缓存", id);
@@ -306,9 +379,14 @@ impl Response {
         response
     }
 
+    /// 根据 HTTP 状态码创建响应。
+    ///
+    /// 自动生成常用错误代码（404, 405, 500）的 HTML 页面，并进行压缩。
     fn from_status_code(code: u16, accept_encoding: Vec<HttpEncoding>, id: u128) -> Self {
         let mut response = Self::new();
         response.content_encoding = decide_encoding(&accept_encoding);
+        
+        // 204 No Content 特殊处理
         if code == 204 {
             response.content = None;
             response.content_encoding = None;
@@ -317,6 +395,7 @@ impl Response {
             response.set_code(code);
             return response;
         }
+        
         response.allow = None;
         match response.content_encoding {
             Some(HttpEncoding::Gzip) => debug!("[ID{}]使用Gzip压缩编码", id),
@@ -324,6 +403,8 @@ impl Response {
             Some(HttpEncoding::Deflate) => debug!("[ID{}]使用Deflate压缩编码", id),
             None => debug!("[ID{}]不进行压缩", id),
         };
+        
+        // 构建默认的错误页面 HTML
         let content = match code {
             404 => HtmlBuilder::from_status_code(404, Some(
                 r"<h2>噢！</h2><p>你指定的网页无法找到。</p>"
@@ -336,6 +417,7 @@ impl Response {
             )),
             _ => HtmlBuilder::from_status_code(code, None),
         }.build();
+        
         let content_compressed = compress(content.into_bytes(), response.content_encoding).unwrap();
         let bytes = Bytes::from(content_compressed);
         response.content_length = bytes.len() as u64;
@@ -345,6 +427,12 @@ impl Response {
         response
     }
 
+    /// 处理目录请求，生成目录列表（HTML 或 JSON）。
+    ///
+    /// # 参数
+    ///
+    /// * `path` - 目录路径。
+    /// * `is_json` - 是否请求 JSON 格式（通过 Accept 头判断）。
     fn from_dir(
         path: &str,
         accept_encoding: Vec<HttpEncoding>,
@@ -402,6 +490,7 @@ impl Response {
             }
         };
 
+        // 区分 JSON 和 HTML 的缓存 Key
         let cache_key = if is_json {
             format!("{}:json", path)
         } else {
@@ -410,6 +499,7 @@ impl Response {
 
         match cache_lock.find(&cache_key, dir_modified_time) {
             Some(bytes) => {
+                // --- 缓存命中 ---
                 debug!("[ID{}]缓存命中，原始大小: {} bytes", id, bytes.len());
                 let mut content_data = bytes.to_vec();
                 let original_size = content_data.len();
@@ -443,6 +533,7 @@ impl Response {
                 response.content_length = content_data.len() as u64;
             }
             None => {
+                // --- 缓存未命中，重新生成目录列表 ---
                 debug!("[ID{}]缓存未命中或目录已修改", id);
                 let mut dir_vec = Vec::<PathBuf>::new();
                 let entries = fs::read_dir(path).unwrap();
@@ -450,6 +541,7 @@ impl Response {
                     dir_vec.push(entry.unwrap().path());
                 }
 
+                // 根据请求类型生成 JSON 数据或 HTML 页面
                 let content_bytes = if is_json {
                     let json_struct: Vec<_> = dir_vec
                         .iter()
@@ -499,6 +591,7 @@ impl Response {
                     false => Some(Bytes::from(content_compressed.clone())),
                 };
 
+                // 更新缓存
                 cache_lock.push(
                     &cache_key,
                     Bytes::from(content_bytes),
@@ -509,6 +602,7 @@ impl Response {
         response
     }
 
+    /// 从 HTML 字符串直接构建响应（主要用于 PHP 处理结果）。
     fn from_html(
         html: &str,
         accept_encoding: Vec<HttpEncoding>,
@@ -545,21 +639,27 @@ impl Response {
         response
     }
 
+    // --- 构建者模式 Setter 方法 ---
+
+    /// 设置响应日期为当前 UTC 时间。
     fn set_date(&mut self) -> &mut Self {
         self.date = Utc::now();
         self
     }
 
+    /// 设置 HTTP 版本（默认 HTTP/1.1）。
     fn set_version(&mut self) -> &mut Self {
         self.version = HttpVersion::V1_1;
         self
     }
 
+    /// 设置服务器名称头。
     fn set_server_name(&mut self) -> &mut Self {
         self.server_name = SERVER_NAME.to_string();
         self
     }
 
+    /// 设置状态码，并自动更新对应的状态描述信息。
     fn set_code(&mut self, code: u16) -> &mut Self {
         self.status_code = code;
         self.information = match STATUS_CODES.get(&code) {
@@ -572,6 +672,7 @@ impl Response {
         self
     }
 
+    /// 静态工厂方法：构建 404 Not Found 响应。
     pub fn response_404(request: &Request, id: u128) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         Self::from_status_code(404, accept_encoding, id)
@@ -581,6 +682,7 @@ impl Response {
             .to_owned()
     }
 
+    /// 静态工厂方法：构建 500 Internal Server Error 响应。
     pub fn response_500(request: &Request, id: u128) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         Self::from_status_code(500, accept_encoding, id)
@@ -590,6 +692,7 @@ impl Response {
             .to_owned()
     }
 
+    /// 静态工厂方法：构建 400 Bad Request 响应。
     pub fn response_400(request: &Request, id: u128) -> Self {
         let accept_encoding = request.accept_encoding().to_vec();
         Self::from_status_code(400, accept_encoding, id)
@@ -599,6 +702,9 @@ impl Response {
             .to_owned()
     }
 
+    /// 处理请求的主入口函数。
+    ///
+    /// 根据请求的方法（Method）和路径（Path）分发到具体的处理逻辑（文件、目录、PHP 等）。
     pub fn from(
         path: &str,
         request: &Request,
@@ -610,6 +716,7 @@ impl Response {
         let method = request.method();
         let metadata_result = fs::metadata(path);
 
+        // 验证请求方法是否支持
         if method != HttpRequestMethod::Get
             && method != HttpRequestMethod::Head
             && method != HttpRequestMethod::Options
@@ -621,6 +728,7 @@ impl Response {
                 .to_owned();
         }
 
+        // 处理 OPTIONS 请求
         if method == HttpRequestMethod::Options {
             debug!("[ID{}]请求方法为OPTIONS", id);
             return Self::from_status_code(204, accept_encoding, id)
@@ -661,6 +769,8 @@ impl Response {
                         }
                     };
                     debug!("[ID{}]文件扩展名: {}", id, extention.to_str().unwrap());
+                    
+                    // 特殊处理 PHP 文件
                     if extention == "php" {
                         debug!("[ID{}]请求的文件是PHP，启用PHP处理", id);
                         let html = match handle_php(path, id) {
@@ -677,6 +787,8 @@ impl Response {
                             .set_server_name()
                             .to_owned();
                     }
+                    
+                    // 处理普通静态文件
                     let mime = get_mime(extention);
                     debug!("[ID{}]MIME类型: {}", id, mime);
                     Self::from_file(path, request, id, cache, headonly, mime, config)
@@ -694,6 +806,9 @@ impl Response {
         }
     }
 
+    /// 将 Response 对象序列化为 HTTP 响应字节流。
+    ///
+    /// 包含状态行、Headers 和 Body。
     pub fn as_bytes(&self) -> Vec<u8> {
         if self.content == None && self.content_type == None {
             assert_eq!(self.content_encoding, None);
@@ -707,6 +822,7 @@ impl Response {
         let date: &str = &format_date(&self.date);
         let server: &str = &self.server_name;
 
+        // 手动构建 HTTP 头部字符串
         let header = [
             version,
             " ",
@@ -770,6 +886,8 @@ impl Response {
             CRLF,
         ]
         .concat();
+        
+        // 拼接头部和内容
         [
             header.as_bytes(),
             match &self.content {
@@ -782,27 +900,42 @@ impl Response {
 }
 
 impl Response {
+    /// 获取 HTTP 状态码。
     pub fn status_code(&self) -> u16 {
         self.status_code
     }
 
+    /// 获取状态信息文本。
     pub fn information(&self) -> &str {
         &self.information
     }
     
+    /// 判断是否为流式响应。
+    ///
+    /// 如果内容为空，但设置了 Content-Type 且 Content-Length > 0，则假定为流式发送。
     pub fn is_streaming(&self) -> bool {
         self.content.is_none() && self.content_type.is_some() && self.content_length > 0
     }
     
+    /// 获取内容长度。
     pub fn get_content_length(&self) -> u64 {
         self.content_length
     }
 }
 
+/// 格式化日期为 HTTP Date 头所需的 RFC 2822 格式。
 fn format_date(date: &DateTime<Utc>) -> String {
     date.to_rfc2822()
 }
 
+/// 压缩数据。
+///
+/// 支持 Gzip, Deflate, Brotli 算法。
+///
+/// # 参数
+///
+/// * `data` - 待压缩的原始字节数据。
+/// * `mode` - 指定的压缩编码。
 fn compress(data: Vec<u8>, mode: Option<HttpEncoding>) -> io::Result<Vec<u8>> {
     let original_size = data.len();
     let result = match mode {
@@ -843,6 +976,9 @@ fn compress(data: Vec<u8>, mode: Option<HttpEncoding>) -> io::Result<Vec<u8>> {
     result
 }
 
+/// 判断特定的 MIME 类型是否应该跳过压缩。
+///
+/// 对于已经是压缩格式的文件（如 zip, jpeg, mp4），再次压缩通常效果不佳且浪费 CPU。
 fn should_skip_compression(mime_type: &str) -> bool {
     let skip_types = [
         "image/jpeg",
@@ -869,6 +1005,10 @@ fn should_skip_compression(mime_type: &str) -> bool {
         .any(|&skip_type| mime_type.starts_with(skip_type))
 }
 
+/// 协商压缩编码。
+///
+/// 根据客户端的 Accept-Encoding 头选择合适的压缩算法。
+/// 优先级：Gzip > Deflate (当前实现忽略了 Brotli 的优先级选择，除非只有 Brotli 也不支持)。
 fn decide_encoding(accept_encoding: &Vec<HttpEncoding>) -> Option<HttpEncoding> {
     if accept_encoding.contains(&HttpEncoding::Gzip) {
         Some(HttpEncoding::Gzip)
@@ -879,6 +1019,7 @@ fn decide_encoding(accept_encoding: &Vec<HttpEncoding>) -> Option<HttpEncoding> 
     }
 }
 
+/// 根据文件扩展名获取 MIME 类型。
 fn get_mime(extension: &OsStr) -> &str {
     let extension = match extension.to_str() {
         Some(e) => e,
